@@ -6,6 +6,7 @@ from app.ai.embedding import GeminiEmbeddingAdapter
 
 
 @pytest.mark.asyncio
+@patch("app.ai.embedding.settings.gemini_api_key", "fake-key-for-tests")
 @patch("langchain_google_genai.GoogleGenerativeAIEmbeddings.aembed_documents", new_callable=AsyncMock)
 @patch("langchain_google_genai.GoogleGenerativeAIEmbeddings.aembed_query", new_callable=AsyncMock)
 async def test_embedding_adapter_dimension_validation(mock_query, mock_docs):
