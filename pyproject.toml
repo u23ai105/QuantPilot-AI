@@ -25,6 +25,9 @@ dependencies = [
     "langgraph>=0.2.0",
     "langchain-google-genai>=2.0.0",
     "sse-starlette>=1.6.0",
+    "python-multipart>=0.0.9",
+    "pymupdf>=1.23.0",
+    "pgvector>=0.2.5",
 ]
 
 [project.optional-dependencies]

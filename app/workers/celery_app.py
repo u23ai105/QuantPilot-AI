@@ -6,7 +6,11 @@ celery_app = Celery(
     "worker",
     broker=settings.celery_broker_url,
     backend=settings.celery_result_backend,
-    include=["app.workers.tasks", "app.workers.backtest_task"],
+    include=[
+        "app.workers.tasks",
+        "app.workers.backtest_task",
+        "app.workers.embedding_task",
+    ],
 )
 
 celery_app.conf.update(
@@ -17,5 +21,6 @@ celery_app.conf.update(
     enable_utc=True,
     task_routes={
         "tasks.run_backtest": {"queue": "backtest"},
+        "app.workers.embedding_task.embed_document": {"queue": "embedding"},
     },
 )

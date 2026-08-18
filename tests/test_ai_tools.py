@@ -77,11 +77,10 @@ def test_search_documents_schema_with_doc_id():
 
 
 @pytest.mark.asyncio
-async def test_search_documents_stub():
-    """search_documents should return UNAVAILABLE in Phase 4."""
+async def test_search_documents_unauthenticated():
+    """search_documents requires authentication."""
     from app.ai.tools.documents import search_documents
 
     result = await search_documents.ainvoke({"query": "Apple revenue", "document_id": None})
-    assert result["status"] == "UNAVAILABLE"
-    assert result["count"] == 0
-    assert result["results"] == []
+    assert "error" in result
+    assert "Authentication required" in result["error"]
