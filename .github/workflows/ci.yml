@@ -32,4 +32,12 @@ jobs:
       - name: Ruff format
         run: ruff format --check .
       - name: Run Pytest
+        env:
+          DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/quantpilot_test"
+          TEST_DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/quantpilot_test"
+          REDIS_URL: "redis://localhost:6379/0"
+          CELERY_BROKER_URL: "redis://localhost:6379/0"
+          CELERY_RESULT_BACKEND: "redis://localhost:6379/0"
+          JWT_SECRET: "ci-test-secret-do-not-use-in-prod"
+          ENVIRONMENT: "test"
         run: pytest
