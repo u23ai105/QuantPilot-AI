@@ -1,6 +1,6 @@
+import app.workers.backtest_task  # noqa: F401
 from app.workers.celery_app import celery_app
 from app.workers.tasks import ping_task
-import app.workers.backtest_task  # noqa: F401
 
 
 def test_ping_task():
