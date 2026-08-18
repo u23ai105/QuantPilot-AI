@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
@@ -15,6 +16,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.strategy import Strategy
 
 
 class Backtest(Base):
@@ -40,6 +44,7 @@ class Backtest(Base):
         nullable=False,
     )
 
+    strategy: Mapped["Strategy"] = relationship("Strategy", lazy="select")
     result: Mapped["BacktestResult"] = relationship("BacktestResult", back_populates="backtest", uselist=False, cascade="all, delete-orphan")
 
     __table_args__ = (

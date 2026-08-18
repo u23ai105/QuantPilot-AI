@@ -21,7 +21,7 @@ class BacktestRepository:
         return result.scalar_one_or_none()
 
     async def get_with_result(self, backtest_id: int) -> Backtest | None:
-        stmt = select(Backtest).options(selectinload(Backtest.result)).where(Backtest.id == backtest_id)
+        stmt = select(Backtest).options(selectinload(Backtest.result), selectinload(Backtest.strategy)).where(Backtest.id == backtest_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

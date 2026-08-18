@@ -14,6 +14,11 @@ Each phase report documents:
 
 ## Phases
 
+- [PHASE-1.md](PHASE-1.md) — Initial FastAPI, Database, and Auth
+- [PHASE-2.md](PHASE-2.md) — Market Data and Indicators
+- [PHASE-3.md](PHASE-3.md) — Strategies and Async Backtesting
+- [PHASE-4.md](PHASE-4.md) — AI Agent and LangGraph
+
 | Phase | Objective | Report |
 |---|---|---|
 | 0 | Repository scaffold | `phase-0-scaffold.md` |

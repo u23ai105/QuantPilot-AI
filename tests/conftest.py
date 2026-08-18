@@ -56,3 +56,24 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="function")
+async def test_user(db_session: AsyncSession):
+    """Create a default test user."""
+    from app.core.security import get_password_hash
+    from app.models.user import User
+
+    user = User(email="testuser@example.com", hashed_password=get_password_hash("password123"))
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture(scope="function")
+async def test_user_token(test_user) -> str:
+    """Generate an access token for the default test user."""
+    from app.core.security import create_access_token
+
+    return create_access_token(str(test_user.id))
