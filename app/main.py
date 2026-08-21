@@ -33,9 +33,15 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name, version="0.1.0", description="QuantPilot AI API")
 
+    cors_origins = settings.cors_origins
+    if isinstance(cors_origins, str):
+        allow_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+    else:
+        allow_origins = cors_origins
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

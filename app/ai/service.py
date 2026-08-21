@@ -153,6 +153,19 @@ class AgentService:
                         },
                     )
 
+                # Tool error
+                elif kind == "on_tool_error":
+                    tool_name = event.get("name", "unknown")
+                    error = event.get("data", {}).get("error", "Unknown error")
+                    logger.warning("tool_error_event", tool=tool_name, error=str(error))
+                    yield StreamEvent(
+                        "tool_end",
+                        {
+                            "tool": tool_name,
+                            "result_summary": f"Error: {str(error)}",
+                        },
+                    )
+
                 # LLM token streaming
                 elif kind == "on_chat_model_stream":
                     chunk = event.get("data", {}).get("chunk")

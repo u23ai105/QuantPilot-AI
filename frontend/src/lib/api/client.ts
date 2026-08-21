@@ -10,7 +10,7 @@ export class APIError extends Error {
   }
 }
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
 
 interface FetchOptions extends RequestInit {
   params?: Record<string, string>;
@@ -51,7 +51,18 @@ export async function fetchClient<T>(endpoint: string, options: FetchOptions = {
       errorData = { detail: response.statusText };
     }
     
-    const message = errorData.detail || "An error occurred";
+    let message = "An error occurred";
+    if (errorData.detail) {
+      if (Array.isArray(errorData.detail)) {
+        // Pydantic validation error list
+        message = errorData.detail.map((e: any) => `${e.loc?.slice(-1)?.[0] || 'field'}: ${e.msg}`).join(", ");
+      } else if (typeof errorData.detail === "string") {
+        message = errorData.detail;
+      } else {
+        message = JSON.stringify(errorData.detail);
+      }
+    }
+    
     throw new APIError(response.status, message, errorData);
   }
 
