@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git check-ignore *)",
+      "Bash(python -c \"import backtesting, inspect; print\\('VERSION', backtesting.__version__\\); print\\('SIG', inspect.signature\\(backtesting.Backtest.__init__\\)\\)\")",
+      "Bash(python -c \"import langgraph, langchain_core, langchain_google_genai; print\\('langgraph', langgraph.__version__\\); print\\('langchain_core', langchain_core.__version__\\); print\\('lc_google_genai', langchain_google_genai.__version__\\)\")",
+      "Read(//Users/muzammilmohammad/Documents/CSAB/csab/Python/AIProjects/QuantPilot AI/venv/lib/python3.12/site-packages/backtesting/**)",
+      "Bash(SP=\"/Users/muzammilmohammad/Documents/CSAB/csab/Python/AIProjects/QuantPilot AI/venv/lib/python3.12/site-packages\"; echo \"=== relevant packages in venv ===\"; ls \"$SP\" | grep -iE \"langgraph|google_genai|langchain\" ; echo \"\"; echo \"=== Gemini disable_streaming default ===\"; grep -n \"disable_streaming\" \"$SP/langchain_google_genai/chat_models.py\" 2>/dev/null | head; echo \"\"; echo \"=== version files ===\"; cat \"$SP/langgraph/version.py\" 2>/dev/null; grep -rn \"__version__\\\\|version\" \"$SP/langchain_google_genai/__init__.py\" 2>/dev/null | head -3; grep -n \"^VERSION\\\\|version\" \"$SP/langchain_core/version.py\" 2>/dev/null | head -3)",
+      "Bash(grep -rnE \"TODO|FIXME|NotImplementedError|XXX|raise NotImplemented|^\\\\s*pass\\\\s*$|\\\\.\\\\.\\\\.\\\\s*$\" app/ai/ app/services/conversation_service.py app/repositories/conversation_repo.py app/api/v1/conversations.py)",
+      "WebSearch",
+      "Bash(ruff check *)",
+      "Bash(ruff format *)",
+      "Bash(command -v python3 python)",
+      "Bash(python3 -m ruff --version)",
+      "Bash(python3 -m py_compile app/ai/embedding.py app/ai/provider.py app/api/v1/conversations.py scripts/run_eval.py)",
+      "Bash(command -v uvicorn)",
+      "Bash(python3 -c \"import uvicorn, fastapi; print\\('uvicorn+fastapi importable'\\)\")",
+      "Bash(python3 -c \"from app.main import app; print\\('app imports OK'\\)\")",
+      "Bash(command -v node npm npx)",
+      "Read(//Users/muzammilmohammad/.claude/**)",
+      "Read(//Users/muzammilmohammad/**)",
+      "Bash(find /Users/muzammilmohammad/.claude/projects -name *.jsonl)",
+      "Bash(awk '{print \"oldest epoch:\", $1}')"
+    ]
+  }
+}
