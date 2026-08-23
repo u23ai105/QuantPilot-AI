@@ -43,18 +43,19 @@ async def run_evaluation():
         _current_user_id.set(user.id)
 
         retrieval_service = RetrievalService(session=session)
-        retrieval_service = RetrievalService(session=session)
 
-        # Build evaluation-only LangGraph agent using Groq
-        from langchain_groq import ChatGroq
+        # Build the evaluation agent from the SAME production wiring the app
+        # uses (app/ai/service.py: AgentService) so eval measures what ships.
         from langgraph.checkpoint.memory import MemorySaver
 
         from app.ai.graph import build_graph
+        from app.ai.provider import GeminiLLMAdapter
         from app.ai.service import ALL_TOOLS
 
-        groq_model_name = os.environ.get("GROQ_MODEL", "llama-3.1-70b-versatile")
-        groq_llm = ChatGroq(model=groq_model_name, max_retries=0)  # Handled by our loop
-        model_with_tools = groq_llm.bind_tools(ALL_TOOLS)
+        # GeminiLLMAdapter reads settings.gemini_model, so eval runs on the same
+        # model the app ships (env-overridable). Rate limits are handled by the
+        # fixed inter-question pacing and the 429 backoff loop below.
+        model_with_tools = GeminiLLMAdapter().bind_tools(ALL_TOOLS)
         graph = build_graph(model_with_tools, ALL_TOOLS)
         compiled_graph = graph.compile(checkpointer=MemorySaver())
 
@@ -180,9 +181,11 @@ async def run_evaluation():
                 }
             )
 
-            # Rate limit backoff (free tier)
-            print("Waiting 5s to avoid rate limits...")
-            await asyncio.sleep(5)
+            # Proactive pacing between questions to respect free-tier RPM limits
+            # (complements the reactive 429 backoff above). Skip after the last question.
+            if q is not questions[-1]:
+                print("Waiting 5s to avoid rate limits...")
+                await asyncio.sleep(5)
 
         # 6. Terminal Report
         print("\n================ EVALUATION REPORT ================")

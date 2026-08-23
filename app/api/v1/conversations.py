@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.service import AgentService
 from app.api.deps import get_current_user, get_db_session
+from app.core.config import settings
+from app.core.exceptions import DataProviderError
 from app.models.user import User
 from app.schemas.conversations import (
     ConversationCreate,
@@ -35,8 +37,17 @@ _agent_service: AgentService | None = None
 
 
 def _get_agent_service() -> AgentService:
+    """Lazily construct the singleton agent service.
+
+    Guarded so a missing GEMINI_API_KEY surfaces as a clean 502 from the chat
+    path (instead of an opaque 500 when the Gemini client construction raises),
+    and a broken instance is never cached.  The rest of the API stays up
+    without a key — only this endpoint needs Gemini.
+    """
     global _agent_service
     if _agent_service is None:
+        if not settings.gemini_api_key:
+            raise DataProviderError("AI agent unavailable: GEMINI_API_KEY is not configured")
         _agent_service = AgentService()
     return _agent_service
 

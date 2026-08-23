@@ -29,6 +29,10 @@ class GeminiLLMAdapter:
         self._max_output_tokens = max_output_tokens or settings.gemini_max_output_tokens
 
         if not self._api_key:
+            # Without a key the ChatGoogleGenerativeAI construction below raises.
+            # Callers that must stay up without a key (e.g. the chat endpoint in
+            # app/api/v1/conversations.py) guard on settings.gemini_api_key before
+            # constructing this adapter, converting the failure into a clean 502.
             logger.warning("gemini_api_key_missing", hint="Set GEMINI_API_KEY in .env")
 
         self._model = ChatGoogleGenerativeAI(
