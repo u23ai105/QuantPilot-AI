@@ -50,6 +50,9 @@ class BacktestService:
         task = celery_app.send_task("tasks.run_backtest", args=[created_bt.id], queue="backtest")
         created_bt.celery_task_id = task.id
         await self.session.commit()
+        # commit() expires every attribute; refresh before the response model reads
+        # them, otherwise serialization lazy-loads outside the greenlet (MissingGreenlet).
+        await self.session.refresh(created_bt)
 
         return created_bt
 

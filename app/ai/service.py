@@ -169,11 +169,11 @@ class AgentService:
                 # LLM token streaming
                 elif kind == "on_chat_model_stream":
                     chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content") and chunk.content:
-                        # Only stream text tokens (not tool-call chunks)
-                        if isinstance(chunk.content, str) and not getattr(chunk, "tool_calls", None):
-                            full_response += chunk.content
-                            yield StreamEvent("token", {"content": chunk.content})
+                    if chunk is not None and getattr(chunk, "content", None) and not getattr(chunk, "tool_calls", None):
+                        text = _extract_text(chunk.content)
+                        if text:
+                            full_response += text
+                            yield StreamEvent("token", {"content": text})
 
         except Exception as exc:
             logger.error(
@@ -195,6 +195,29 @@ class AgentService:
         )
 
         yield StreamEvent("done", {"message_id": None})
+
+
+def _extract_text(content: str | list | None) -> str:
+    """Flatten a streamed chunk's content into plain answer text.
+
+    Gemini streams ``content`` as a list of blocks rather than a bare string
+    (e.g. ``[{"type": "text", "text": "...", "index": 0}]``), and also emits
+    non-answer blocks such as empty-text thought signatures.  Only ``text``
+    blocks contribute to the visible answer.
+    """
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return ""
+    parts = []
+    for block in content:
+        if isinstance(block, str):
+            parts.append(block)
+        elif isinstance(block, dict) and block.get("type", "text") == "text":
+            text = block.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+    return "".join(parts)
 
 
 def _summarize_tool_result(tool_name: str, result: dict) -> str:
