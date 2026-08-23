@@ -21,7 +21,7 @@ from app.services.eval_service import EvalService
 from app.services.retrieval_service import RetrievalService
 
 
-async def run_evaluation():
+async def run_evaluation(only_unscored: bool = False, question_ids: list[int] | None = None):
     async with async_session_maker() as session:
         # Get the dummy eval user created by the seed script
         stmt = select(User).filter_by(email="eval_user@example.com")
@@ -30,11 +30,27 @@ async def run_evaluation():
             print("Eval user not found! Please run 'python scripts/seed_eval_questions.py' first.")
             return
 
-        # Fetch questions
+        # Fetch questions.  Default: all of them.  --questions filters to explicit
+        # IDs; --only-unscored skips questions that already have a *scored* run, so a
+        # re-run scores just the remaining ones without appending duplicate rows
+        # (question_id is not unique, so re-running would otherwise INSERT dupes).
         stmt = select(EvalQuestion).order_by(EvalQuestion.id)
+        if question_ids:
+            stmt = stmt.where(EvalQuestion.id.in_(question_ids))
+        elif only_unscored:
+            # "Scored" = has a run with a non-empty generated answer.  API-failed
+            # rows (empty answer) don't count, so a quota-interrupted run resumes
+            # cleanly on the next --only-unscored invocation.
+            scored = select(EvalRun.question_id).where(EvalRun.generated_answer.isnot(None), EvalRun.generated_answer != "")
+            stmt = stmt.where(EvalQuestion.id.notin_(scored))
         questions = (await session.execute(stmt)).scalars().all()
         if not questions:
-            print("No evaluation questions found! Please run 'python scripts/seed_eval_questions.py' first.")
+            if question_ids:
+                print(f"No eval questions matched IDs {question_ids}.")
+            elif only_unscored:
+                print("No unscored questions — every eval question already has an eval_runs row. Nothing to do.")
+            else:
+                print("No evaluation questions found! Please run 'python scripts/seed_eval_questions.py' first.")
             return
 
         print(f"Loaded {len(questions)} evaluation questions.")
@@ -241,4 +257,20 @@ async def run_evaluation():
 
 
 if __name__ == "__main__":
-    asyncio.run(run_evaluation())
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run the RAG eval harness (deterministic scoring).")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--only-unscored",
+        action="store_true",
+        help="Only run questions with no existing eval_runs row (skip already-scored ones).",
+    )
+    group.add_argument(
+        "--questions",
+        help="Comma-separated EvalQuestion IDs to run, e.g. --questions 10,11,12.",
+    )
+    _args = parser.parse_args()
+    _ids = [int(x) for x in _args.questions.split(",") if x.strip()] if _args.questions else None
+
+    asyncio.run(run_evaluation(only_unscored=_args.only_unscored, question_ids=_ids))
