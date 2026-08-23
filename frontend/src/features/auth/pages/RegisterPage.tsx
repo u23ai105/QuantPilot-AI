@@ -4,28 +4,36 @@ import { useAuth } from "../AuthContext";
 import { authApi } from "@/lib/api/auth";
 import { useMutation } from "@tanstack/react-query";
 import { APIError } from "@/lib/api/client";
+import type { RegisterRequest } from "@/types/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 
-export function LoginPage() {
+export function RegisterPage() {
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const loginMutation = useMutation({
-    mutationFn: authApi.login,
+  const signupMutation = useMutation({
+    // /auth/register returns the created user, not a token. Chain an immediate
+    // login so a successful sign-up drops the user straight into the workspace
+    // (PublicRoute redirects to "/" once AuthContext sees the token).
+    mutationFn: async (data: RegisterRequest) => {
+      await authApi.register(data);
+      return authApi.login(data);
+    },
     onSuccess: (data) => {
       login(data.access_token);
     },
     onError: (err: Error) => {
       if (err instanceof APIError) {
-        if (err.status === 401) {
-          setErrorMsg("Invalid email or password.");
+        if (err.status === 409) {
+          setErrorMsg("An account with this email already exists.");
         } else {
-          setErrorMsg(err.message || "An authentication error occurred.");
+          setErrorMsg(err.message || "Could not create your account. Please try again.");
         }
       } else {
         setErrorMsg("Network error. Please ensure the API is reachable.");
@@ -36,13 +44,21 @@ export function LoginPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    
+
     if (!email || !password) {
       setErrorMsg("Please enter both email and password.");
       return;
     }
+    if (password.length < 8) {
+      setErrorMsg("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorMsg("Passwords do not match.");
+      return;
+    }
 
-    loginMutation.mutate({ email, password });
+    signupMutation.mutate({ email, password });
   };
 
   return (
@@ -65,9 +81,9 @@ export function LoginPage() {
 
         <Card className="border-border/50 shadow-none bg-card/50">
           <CardHeader className="space-y-1 pb-6">
-            <CardTitle className="text-xl">Sign In</CardTitle>
+            <CardTitle className="text-xl">Create Account</CardTitle>
             <CardDescription className="text-sm">
-              Enter your credentials to access the workspace.
+              Set up your workspace to start researching.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -83,23 +99,38 @@ export function LoginPage() {
                   className="bg-background/50 focus-visible:ring-ai/50"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  disabled={loginMutation.isPending}
+                  disabled={signupMutation.isPending}
                   required
                 />
               </div>
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider" htmlFor="password">
-                    Password
-                  </label>
-                </div>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider" htmlFor="password">
+                  Password
+                </label>
                 <Input
                   id="password"
                   type="password"
                   className="bg-background/50 focus-visible:ring-ai/50"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  disabled={loginMutation.isPending}
+                  disabled={signupMutation.isPending}
+                  minLength={8}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">Minimum 8 characters.</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider" htmlFor="confirmPassword">
+                  Confirm Password
+                </label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  className="bg-background/50 focus-visible:ring-ai/50"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={signupMutation.isPending}
+                  minLength={8}
                   required
                 />
               </div>
@@ -113,28 +144,25 @@ export function LoginPage() {
               <Button
                 type="submit"
                 className="w-full bg-foreground text-background hover:bg-foreground/90 font-medium h-10"
-                disabled={loginMutation.isPending}
+                disabled={signupMutation.isPending}
               >
-                {loginMutation.isPending ? (
+                {signupMutation.isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Authenticating...
+                    Creating account...
                   </>
                 ) : (
-                  "Sign In"
+                  "Create Account"
                 )}
               </Button>
             </form>
           </CardContent>
-          <CardFooter className="flex flex-col gap-3 border-t border-border/50 pt-6">
+          <CardFooter className="flex flex-col border-t border-border/50 pt-6">
             <p className="text-center text-xs text-muted-foreground">
-              No account yet?{" "}
-              <Link to="/register" className="font-medium text-ai hover:underline">
-                Create one
+              Already have an account?{" "}
+              <Link to="/login" className="font-medium text-ai hover:underline">
+                Sign in
               </Link>
-            </p>
-            <p className="text-center text-xs text-muted-foreground">
-              By signing in, you agree to the Terms of Service.
             </p>
           </CardFooter>
         </Card>
