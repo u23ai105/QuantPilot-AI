@@ -12,6 +12,10 @@ dist/
 build/
 *.egg-info/
 *.json
+# Frontend dependency manifest + lockfile must be version-controlled despite the
+# blanket *.json ignore above (parent dir isn't excluded, so these negations apply).
+!frontend/package.json
+!frontend/package-lock.json
 docs.zip
 .ruff_cache/
 

@@ -4,6 +4,7 @@ import { PageContainer } from "@/components/layout/AppShell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { Send, Bot, User, Wrench, AlertCircle, Loader2 } from "lucide-react";
 import { conversationsApi } from "@/lib/api/resources";
 
@@ -241,14 +242,20 @@ export function ResearchPage() {
                     <Bot className="h-4 w-4 text-background" />
                   </div>
                 )}
-                <div className={`max-w-[80%] rounded-lg p-3 text-sm whitespace-pre-wrap ${
-                  m.role === "user" 
-                    ? "bg-secondary text-foreground" 
-                    : m.isError 
+                <div className={`max-w-[80%] rounded-lg p-3 text-sm ${
+                  m.role === "assistant" && !m.isError ? "" : "whitespace-pre-wrap"
+                } ${
+                  m.role === "user"
+                    ? "bg-secondary text-foreground"
+                    : m.isError
                       ? "bg-destructive/10 border border-destructive/20 text-destructive"
                       : "bg-card border border-border/50 text-foreground"
                 }`}>
-                  {m.content}
+                  {m.role === "assistant" && !m.isError ? (
+                    <MarkdownMessage content={m.content} />
+                  ) : (
+                    m.content
+                  )}
                   {m.isStreaming && m.content.length === 0 && (
                     <span className="text-muted-foreground animate-pulse">Thinking...</span>
                   )}
