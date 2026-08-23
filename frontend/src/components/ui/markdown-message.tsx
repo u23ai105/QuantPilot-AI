@@ -1,5 +1,9 @@
+import "katex/dist/katex.min.css";
+
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { visit } from "unist-util-visit";
 
 import { cn } from "@/lib/utils";
@@ -101,9 +105,18 @@ const markdownComponents = {
 };
 
 export function MarkdownMessage({ content }: { content: string }) {
+  // Math: `singleDollarTextMath: false` renders ONLY $$...$$ block math; single-$
+  // stays literal so plain dollar amounts ("from $50 to $52") can't be misparsed
+  // as inline math and garbled — the right default for a finance app. Tradeoff:
+  // inline `$R_p$`-style math also stays literal. Flip the flag to true (or drop it)
+  // to enable full single-$ inline math if currency collisions prove rare.
   return (
     <div className="space-y-2 text-sm">
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitations]} components={markdownComponents as Components}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }], remarkCitations]}
+        rehypePlugins={[rehypeKatex]}
+        components={markdownComponents as Components}
+      >
         {content}
       </ReactMarkdown>
     </div>
