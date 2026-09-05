@@ -62,26 +62,21 @@ function BacktestRow({ bt }: { bt: BacktestResponse }) {
 }
 
 export function BacktestsPage() {
-  // There's no list-all-backtests endpoint, so we note that clearly.
-  // Backtests are submitted from the Strategies page and tracked here by ID from sessionStorage.
-  const storedIds: number[] = (() => {
-    try { return JSON.parse(sessionStorage.getItem("quantpilot_backtests") || "[]"); } catch { return []; }
-  })();
-
+  // GET /backtests returns every run owned by the authenticated user, newest first, so the
+  // history survives a page reload (the old sessionStorage id list did not).
   const { data: backtests, isLoading, error, refetch } = useQuery<BacktestResponse[]>({
-    queryKey: ["backtests", storedIds],
-    queryFn: async () => {
-      if (storedIds.length === 0) return [];
-      const results = await Promise.allSettled(storedIds.map(id => backtestsApi.get(id)));
-      return results
-        .filter(r => r.status === "fulfilled")
-        .map(r => (r as PromiseFulfilledResult<BacktestResponse>).value);
+    queryKey: ["backtests"],
+    queryFn: () => backtestsApi.list(),
+    // Keep polling only while something is still in flight.
+    refetchInterval: query => {
+      const rows = query.state.data;
+      if (!rows) return false;
+      return rows.some(bt => bt.status !== "COMPLETED" && bt.status !== "FAILED") ? 5000 : false;
     },
-    refetchInterval: storedIds.length > 0 ? 5000 : false,
   });
 
   return (
-    <PageContainer title="Backtests" description="Submit backtests from the Strategies page and monitor results here.">
+    <PageContainer title="Backtests" description="Every backtest you've submitted, newest first.">
       <div className="flex justify-end mb-6">
         <Button variant="secondary" size="sm" onClick={() => refetch()}>
           <RefreshCw className="h-4 w-4 mr-2" />

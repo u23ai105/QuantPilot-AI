@@ -13,17 +13,26 @@ from app.core.config import settings
 from app.main import app
 from app.models.base import Base
 
-TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL",
-    os.getenv(
-        "DATABASE_URL",
-        getattr(
-            settings,
-            "database_url",
-            "postgresql+asyncpg://postgres:postgres@localhost:5432/quantpilot_test",
-        ),
-    ),
-)
+
+def _default_test_database_url() -> str:
+    """Derive a dedicated test database URL from the configured one.
+
+    `setup_test_db` runs `drop_all` on whatever database it is pointed at, so falling
+    back to `DATABASE_URL` unmodified would delete the developer's schema on every run.
+    Instead, reuse the connection details but suffix the database name with `_test`.
+    """
+    configured = os.getenv("DATABASE_URL") or getattr(settings, "database_url", None)
+    if not configured:
+        return "postgresql+asyncpg://postgres:postgres@localhost:5432/quantpilot_test"
+    base, sep, database = configured.rpartition("/")
+    if not sep or not database or database.endswith("_test"):
+        return configured
+    # Keep any query string (e.g. ?ssl=require) attached to the database name.
+    name, qmark, query = database.partition("?")
+    return f"{base}/{name}_test{qmark}{query}"
+
+
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL") or _default_test_database_url()
 
 engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
 TestingSessionLocal = async_sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)

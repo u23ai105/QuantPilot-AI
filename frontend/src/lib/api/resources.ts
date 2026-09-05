@@ -1,4 +1,4 @@
-import { fetchClient } from "./client";
+import { API_ROOT_URL, APIError, fetchClient } from "./client";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -83,6 +83,10 @@ export const strategiesApi = {
 };
 
 export const backtestsApi = {
+  list: (limit = 50, offset = 0) =>
+    fetchClient<BacktestResponse[]>("/backtests", {
+      params: { limit: String(limit), offset: String(offset) },
+    }),
   create: (data: BacktestCreate) =>
     fetchClient<BacktestResponse>("/backtests", {
       method: "POST",
@@ -159,6 +163,21 @@ export interface MessagesListResponse {
   conversation_id: string;
   messages: MessageResponse[];
 }
+
+export interface ReadyResponse {
+  db: "ok" | "down" | "unknown";
+  redis: "ok" | "down" | "unknown";
+  status: "ok" | "error";
+}
+
+export const healthApi = {
+  /** `GET /ready` — checks DB + Redis. Lives at the server root, outside `/api/v1`. */
+  ready: async (): Promise<ReadyResponse> => {
+    const response = await fetch(`${API_ROOT_URL}/ready`);
+    if (!response.ok) throw new APIError(response.status, "Readiness check failed");
+    return (await response.json()) as ReadyResponse;
+  },
+};
 
 export const conversationsApi = {
   create: (title: string) => fetchClient<ConversationResponse>("/conversations", {

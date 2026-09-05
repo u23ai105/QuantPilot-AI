@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/layout/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +19,7 @@ function StatusBadge({ status }: { status: string }) {
 export function DocumentsPage() {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState("");
 
   const { data: docs = [], isLoading, error } = useQuery({
     queryKey: ["documents"],
@@ -47,13 +48,24 @@ export function DocumentsPage() {
   const formatSize = (bytes: number) =>
     bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
+  // Client-side filename filter. The documents list endpoint has no search parameter, and
+  // the whole list is already in memory, so there is nothing to ask the server for.
+  const query = search.trim().toLowerCase();
+  const visibleDocs = query ? docs.filter((doc: DocumentResponse) => doc.filename.toLowerCase().includes(query)) : docs;
+
   return (
     <PageContainer title="Documents & RAG" description="Upload 10-K / annual-report PDFs for AI context retrieval.">
       {/* Search + Upload Row */}
       <div className="flex gap-4 mb-6">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Search documents..." className="pl-9 bg-background/50" disabled />
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search documents by filename..."
+            aria-label="Search documents by filename"
+            className="pl-9 bg-background/50"
+          />
         </div>
         <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
         <Button
@@ -95,10 +107,16 @@ export function DocumentsPage() {
           <p className="text-xs mt-1">Upload a 10-K or annual report PDF to get started.</p>
         </div>
       )}
+      {!isLoading && docs.length > 0 && visibleDocs.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground border border-dashed border-border/50 rounded-lg">
+          <Search className="h-10 w-10 opacity-20 mb-3" />
+          <p className="text-sm">No documents match "{search.trim()}".</p>
+        </div>
+      )}
 
-      {docs.length > 0 && (
+      {visibleDocs.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {docs.map((doc: DocumentResponse) => (
+          {visibleDocs.map((doc: DocumentResponse) => (
             <Card key={doc.id} className="bg-background/50 border-border/50 hover:border-ai/30 transition-colors">
               <CardHeader className="flex flex-row items-start justify-between pb-2">
                 <FileText className="h-8 w-8 text-muted-foreground" />

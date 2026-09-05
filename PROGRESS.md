@@ -83,6 +83,38 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
   `PostgresSaver` note now warning that a future checkpointer also requires switching to append-only
   turns), its §2.4 compile snippet, and `CLAUDE.md`. Verified: graph compiles with `checkpointer = None`,
   the reloaded API returns `/ready` = `{"db":"ok","redis":"ok","status":"ok"}`, suite still 69 passed.
+- **Task 10 — disabled/dead UI elements: done.** Five items, each either wired to real data or removed
+  when nothing backed it:
+  - *Documents search input* — was `disabled`. Now a live client-side filename filter (the list
+    endpoint has no search param and the whole list is already in memory), with a "No documents match
+    …" empty state. Verified live against two seeded PROCESSED documents: `apple` → 1 card,
+    `tesla` → empty state, cleared → both cards.
+  - *⌘K button* — removed. There is no command-palette implementation, no `cmdk` dependency, and no
+    keybinding, so the button could never do anything.
+  - *"API: Connected" pill* — was hardcoded green text, i.e. it claimed health regardless of the
+    backend. Now driven by `GET /ready` (30s poll, `retry: false`) with four states: Checking /
+    Connected / Degraded (naming which of DB or Redis is down) / Unreachable, in a `role="status"
+    aria-live="polite"` region. `/ready` is mounted at the app root, not under `/api/v1`, so
+    `fetchClient` can't reach it — added `API_ROOT_URL` (derived from `API_BASE_URL` by stripping the
+    version suffix) and a `healthApi.ready()` that fetches it directly. Both branches verified live:
+    "API: Connected" against the real backend, "API: Degraded (Redis down)" against a patched `/ready`.
+  - */settings sidebar link* — removed. No such route exists (React Router would render nothing) and
+    there is no settings surface on the backend either.
+  - *Backtest history* — `BacktestsPage` tracked run ids in `sessionStorage`, so history vanished on
+    reload and was invisible to any other device. It now calls the real `GET /backtests` (already
+    implemented and owner-scoped) via `backtestsApi.list()`, newest first, polling every 5s **only**
+    while at least one run is not COMPLETED/FAILED. `StrategiesPage` correspondingly stopped writing
+    `sessionStorage` and just invalidates the `["backtests"]` query. Verified live: 3 real rows
+    rendered after a reload, with the RUNNING row polling.
+- **Test harness — dev database was being destroyed (defect found during task 10, not a numbered
+  task).** `tests/conftest.py` resolved its URL as `TEST_DATABASE_URL` → `DATABASE_URL` → settings, and
+  `setup_test_db` runs `Base.metadata.drop_all` per test function — so with no `TEST_DATABASE_URL` set,
+  every `pytest` run dropped all 13 tables of the **dev** database. That is what caused the
+  `UndefinedTableError: relation "users" does not exist` seen mid-run. Fixed with
+  `_default_test_database_url()`: reuse the configured connection details but suffix the database name
+  with `_test` (idempotent if it already ends in `_test`, and any `?query` string is preserved).
+  `TEST_DATABASE_URL` still wins when set. Proof: a full 69-passed run now leaves the dev DB with all
+  13 tables, head revision, and the HNSW index intact.
 
 ## Blocked
 

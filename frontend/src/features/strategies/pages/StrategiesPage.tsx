@@ -90,13 +90,8 @@ export function StrategiesPage() {
     onSuccess: (bt) => {
       setLastBacktest(bt);
       setBtError(null);
-      // Persist ID for BacktestsPage
-      const stored: number[] = (() => {
-        try { return JSON.parse(sessionStorage.getItem("quantpilot_backtests") || "[]"); } catch { return []; }
-      })();
-      if (!stored.includes(bt.id)) {
-        sessionStorage.setItem("quantpilot_backtests", JSON.stringify([...stored, bt.id]));
-      }
+      // BacktestsPage reads GET /backtests, so the new run only needs a cache invalidation.
+      qc.invalidateQueries({ queryKey: ["backtests"] });
     },
     onError: (e: Error) => {
       setBtError(e.message);
