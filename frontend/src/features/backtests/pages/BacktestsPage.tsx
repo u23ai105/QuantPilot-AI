@@ -29,6 +29,12 @@ function BacktestRow({ bt }: { bt: BacktestResponse }) {
           <p className="text-xs text-muted-foreground mt-0.5">
             Strategy {bt.strategy_id} • {bt.start_date} → {bt.end_date}
           </p>
+          {bt.status === "FAILED" && bt.error_message && (
+            <p className="flex items-start gap-1 text-xs text-destructive mt-1">
+              <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+              <span>{bt.error_message}</span>
+            </p>
+          )}
         </div>
       </div>
       <div className="flex gap-8 text-right">

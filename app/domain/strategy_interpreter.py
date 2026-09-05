@@ -40,7 +40,7 @@ class StrategyInterpreter:
 
         class DynamicStrategy(BaseStrategy):
             def init(self):
-                self.indicators = {}
+                self._indicator_keys: set[str] = set()
 
                 # Setup indicators for entry conditions
                 self._setup_group(rules_json["entry"])
@@ -62,41 +62,23 @@ class StrategyInterpreter:
                 param_str = "_".join(f"{k}{v}" for k, v in sorted(params.items()))
                 key = f"{ind_name}_{param_str}"
 
-                if key not in self.indicators:
-                    if ind_name == "bollinger":
-                        self.indicators[f"{key}_upper"] = self.I(
-                            indicator_wrapper(ind_name, "upper"),
-                            self.data.df,
-                            **params,
-                        )
-                        self.indicators[f"{key}_lower"] = self.I(
-                            indicator_wrapper(ind_name, "lower"),
-                            self.data.df,
-                            **params,
-                        )
-                        self.indicators[f"{key}_middle"] = self.I(
-                            indicator_wrapper(ind_name, "middle"),
-                            self.data.df,
-                            **params,
-                        )
-                    elif ind_name == "macd":
-                        self.indicators[f"{key}_macd"] = self.I(
-                            indicator_wrapper(ind_name, "macd"),
-                            self.data.df,
-                            **params,
-                        )
-                        self.indicators[f"{key}_signal"] = self.I(
-                            indicator_wrapper(ind_name, "signal"),
-                            self.data.df,
-                            **params,
-                        )
-                        self.indicators[f"{key}_histogram"] = self.I(
-                            indicator_wrapper(ind_name, "histogram"),
-                            self.data.df,
-                            **params,
-                        )
-                    else:
-                        self.indicators[key] = self.I(indicator_wrapper(ind_name), self.data.df, **params)
+                if key in self._indicator_keys:
+                    return
+                self._indicator_keys.add(key)
+
+                # Indicators MUST be stored as strategy attributes (not in a dict). backtesting.py only
+                # slices to the current bar the _Indicator values it finds directly in strategy.__dict__
+                # (see backtesting._util._strategy_indicators). Values hidden inside a dict stay
+                # full-length for the whole run, so indicator[-1] would return the final bar's value on
+                # every bar -> entry/exit conditions are constant -> no signal ever fires -> 0 trades.
+                if ind_name == "bollinger":
+                    for comp in ("upper", "lower", "middle"):
+                        setattr(self, f"{key}_{comp}", self.I(indicator_wrapper(ind_name, comp), self.data.df, **params))
+                elif ind_name == "macd":
+                    for comp in ("macd", "signal", "histogram"):
+                        setattr(self, f"{key}_{comp}", self.I(indicator_wrapper(ind_name, comp), self.data.df, **params))
+                else:
+                    setattr(self, key, self.I(indicator_wrapper(ind_name), self.data.df, **params))
 
             def _get_indicator_value(self, config: dict[str, Any], step: int = -1) -> float:
                 ind_name = config["indicator"]
@@ -110,7 +92,7 @@ class StrategyInterpreter:
                         component = "middle" if ind_name == "bollinger" else "macd"
                     key = f"{key}_{component}"
 
-                return self.indicators[key][step]
+                return getattr(self, key)[step]
 
             def _evaluate_condition(self, condition: dict[str, Any]) -> bool:
                 val1 = self._get_indicator_value(condition)

@@ -10,8 +10,8 @@ class BacktestCreate(BaseModel):
     start_date: date
     end_date: date
     initial_capital: float = Field(10000.0, gt=0)
-    commission: float = Field(0.001, ge=0)
-    slippage: float = Field(0.000, ge=0)
+    commission: float = Field(0.001, ge=0, lt=0.1)
+    slippage: float = Field(0.000, ge=0, lt=0.1)
 
 
 class BacktestResponse(BaseModel):

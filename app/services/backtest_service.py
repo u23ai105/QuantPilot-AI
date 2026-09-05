@@ -7,6 +7,7 @@ from app.models.backtest import Backtest
 from app.models.strategy import Strategy
 from app.models.ticker import Ticker
 from app.repositories.backtest_repo import BacktestRepository
+from app.repositories.market_data_repo import MarketDataRepository
 from app.schemas.backtests import BacktestCreate
 from app.workers.celery_app import celery_app
 
@@ -33,6 +34,20 @@ class BacktestService:
 
         if data.start_date >= data.end_date:
             raise ValueError("start_date must be before end_date")
+
+        # Validate the requested window against available OHLCV coverage so a bad date
+        # range fails fast with a clear 400, instead of letting the worker fail the run
+        # asynchronously at its data-load step ("No market data found ...").
+        market_repo = MarketDataRepository(self.session)
+        coverage = await market_repo.get_ohlcv_date_range(ticker.id)
+        if coverage is None:
+            raise ValueError(f"No price data available for {data.symbol}. Seed market data before backtesting.")
+        min_date, max_date = coverage
+        if data.start_date > max_date or data.end_date < min_date:
+            raise ValueError(
+                f"No price data for {data.symbol} between {data.start_date} and {data.end_date}. "
+                f"Available range: {min_date} to {max_date}."
+            )
 
         backtest = Backtest(
             strategy_id=strategy.id,

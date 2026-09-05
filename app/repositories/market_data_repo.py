@@ -2,7 +2,7 @@
 
 import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -99,3 +99,17 @@ class MarketDataRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_ohlcv_date_range(self, ticker_id: int) -> tuple[datetime.date, datetime.date] | None:
+        """Return (min_date, max_date) of stored OHLCV for a ticker, or None if there is none.
+
+        Used to validate a requested backtest window against available price data so an
+        out-of-range request fails fast with a clear 400, instead of an opaque async
+        backtest FAILED at the worker's data-load step.
+        """
+        stmt = select(func.min(OHLCV.date), func.max(OHLCV.date)).where(OHLCV.ticker_id == ticker_id)
+        result = await self.session.execute(stmt)
+        min_date, max_date = result.one()
+        if min_date is None or max_date is None:
+            return None
+        return min_date, max_date

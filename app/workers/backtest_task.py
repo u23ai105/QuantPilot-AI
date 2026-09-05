@@ -93,6 +93,7 @@ async def execute_backtest_async(backtest_id: int):
                     margin=1.0,
                     trade_on_close=False,
                     exclusive_orders=True,
+                    finalize_trades=True,
                 )
 
                 bt_result = bt.run()

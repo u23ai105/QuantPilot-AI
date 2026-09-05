@@ -35,6 +35,17 @@ const DEFAULT_STRATEGY_JSON = JSON.stringify({
   position_sizing: { type: "fixed_fraction", value: 0.95 },
 }, null, 2);
 
+// Backtests only have data inside the seeded OHLCV window (~last year of daily bars),
+// so default the form to a recent window instead of a hard-coded 2021–2023 range that
+// no longer overlaps any data. The backend still validates the range authoritatively.
+function recentDateRange(): { start: string; end: string } {
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const end = new Date();
+  const start = new Date();
+  start.setFullYear(start.getFullYear() - 1);
+  return { start: fmt(start), end: fmt(end) };
+}
+
 interface BacktestFormState {
   symbol: string;
   start_date: string;
@@ -48,11 +59,14 @@ export function StrategiesPage() {
   const [editorJson, setEditorJson] = useState(DEFAULT_STRATEGY_JSON);
   const [newName, setNewName] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const [btForm, setBtForm] = useState<BacktestFormState>({
-    symbol: "AAPL",
-    start_date: "2021-01-01",
-    end_date: "2023-12-31",
-    initial_capital: "10000",
+  const [btForm, setBtForm] = useState<BacktestFormState>(() => {
+    const { start, end } = recentDateRange();
+    return {
+      symbol: "AAPL",
+      start_date: start,
+      end_date: end,
+      initial_capital: "10000",
+    };
   });
   const [lastBacktest, setLastBacktest] = useState<BacktestResponse | null>(null);
   const [btError, setBtError] = useState<string | null>(null);
@@ -88,6 +102,19 @@ export function StrategiesPage() {
       setBtError(e.message);
     },
   });
+
+  // The run executes asynchronously on Celery, so poll the just-submitted backtest
+  // until it reaches a terminal state and show its status / error_message live.
+  const { data: polledBt } = useQuery({
+    queryKey: ["backtest", lastBacktest?.id],
+    queryFn: () => backtestsApi.get(lastBacktest!.id),
+    enabled: !!lastBacktest,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "COMPLETED" || status === "FAILED" ? false : 2500;
+    },
+  });
+  const displayBt = polledBt ?? lastBacktest;
 
   const handleSelectStrategy = (s: StrategyResponse) => {
     setSelected(s);
@@ -255,16 +282,35 @@ export function StrategiesPage() {
                   </div>
                 )}
 
-                {lastBacktest && (
+                {displayBt && (
                   <div className="rounded-lg bg-card border border-border/50 p-4 space-y-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Backtest Queued</p>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {displayBt.status === "COMPLETED"
+                        ? "Backtest Complete"
+                        : displayBt.status === "FAILED"
+                          ? "Backtest Failed"
+                          : "Backtest Running"}
+                    </p>
                     <div className="grid grid-cols-2 gap-2 text-sm">
-                      <div><span className="text-muted-foreground">ID:</span> <span className="font-medium">{lastBacktest.id}</span></div>
-                      <div><span className="text-muted-foreground">Status:</span> <span className={`font-medium ${lastBacktest.status === "COMPLETED" ? "text-emerald-500" : "text-amber-500"}`}>{lastBacktest.status}</span></div>
+                      <div><span className="text-muted-foreground">ID:</span> <span className="font-medium">{displayBt.id}</span></div>
+                      <div><span className="text-muted-foreground">Status:</span> <span className={`font-medium ${displayBt.status === "COMPLETED" ? "text-emerald-500" : displayBt.status === "FAILED" ? "text-destructive" : "text-amber-500"}`}>{displayBt.status}</span></div>
                       <div><span className="text-muted-foreground">Symbol:</span> <span className="font-medium">{btForm.symbol.toUpperCase()}</span></div>
-                      <div><span className="text-muted-foreground">Capital:</span> <span className="font-medium">${lastBacktest.initial_capital.toLocaleString()}</span></div>
+                      <div><span className="text-muted-foreground">Capital:</span> <span className="font-medium">${displayBt.initial_capital.toLocaleString()}</span></div>
                     </div>
-                    <p className="text-xs text-muted-foreground">The backtest is being processed by Celery. Results will appear once the status is COMPLETED.</p>
+                    {displayBt.status === "FAILED" && displayBt.error_message && (
+                      <div className="flex gap-2 text-destructive text-sm">
+                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                        <span>{displayBt.error_message}</span>
+                      </div>
+                    )}
+                    {(displayBt.status === "QUEUED" || displayBt.status === "RUNNING") && (
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Processing on Celery — this updates automatically.
+                      </p>
+                    )}
+                    {displayBt.status === "COMPLETED" && (
+                      <p className="text-xs text-muted-foreground">Done. View full metrics on the Backtests page.</p>
+                    )}
                   </div>
                 )}
               </CardContent>
