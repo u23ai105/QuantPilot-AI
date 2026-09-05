@@ -51,6 +51,10 @@ Redis. Implementation has shipped through **Phase 7 (product UI)** — see
     dependency-free finance core shared by both the REST endpoints and the AI tools.
 *   **Auth** — registration, bcrypt hashing, JWT bearer tokens; every resource read is
     ownership-scoped.
+*   **Rate limiting** — Redis fixed-window budgets per caller on the endpoints that cost real
+    resources (chat, backtest submission, ingestion, upload) plus login/register. Keyed by user id
+    when a bearer token is present, client IP otherwise; responses carry `X-RateLimit-*` and a 429
+    carries `Retry-After`. Fails open if Redis is down, since it guards cost, not access.
 *   **Observability** — structlog with a per-request `X-Request-ID`, `GET /health` (liveness) and
     `GET /ready` (checks Postgres + Redis).
 

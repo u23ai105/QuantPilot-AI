@@ -115,6 +115,47 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
   with `_test` (idempotent if it already ends in `_test`, and any `?query` string is preserved).
   `TEST_DATABASE_URL` still wins when set. Proof: a full 69-passed run now leaves the dev DB with all
   13 tables, head revision, and the HNSW index intact.
+- **Task 13 — Redis rate limiting: done.** There was no rate limiting anywhere before this (grep found
+  only aspirational mentions in `docs/`), so chat, backtest submission, ingestion and login were all
+  unbounded. Added `app/core/rate_limit.py` (fixed-window `RateLimiter` over Redis) and
+  `app/api/middleware/rate_limit.py` (`RateLimitMiddleware` + `DEFAULT_RULES`), wired in `create_app()`.
+  Design decisions, each recorded in the code:
+  - **Redis, not in-process** — Render runs several Uvicorn workers, and a per-process counter would let
+    N workers serve N times the configured limit.
+  - **Fixed window, not a sliding log** — one `INCR` plus one `EXPIRE` per request. It permits up to 2x
+    the limit across a window boundary, which is acceptable for cost control.
+  - **Fail open** — a Redis error allows the request. A limiter is a cost guard, not an authorization
+    boundary, so an outage must not 429 the whole API; `/ready` already surfaces Redis health.
+  - **`EXPIRE` on every request, not just the first** — a crash between `INCR` and `EXPIRE` would
+    otherwise leave a key with no TTL, permanently blocking that caller.
+  - **Identity = user id when a bearer token parses, else client IP.** Added a non-raising
+    `decode_token_subject` to `app/core/security.py` for this. Without it, everyone behind one NAT
+    shares a budget and one user can exhaust it for the rest.
+  - **Middleware added *first*** so it sits innermost: Starlette makes the last-added middleware
+    outermost, and a 429 emitted outside `CORSMiddleware` carries no `Access-Control-Allow-Origin`, so
+    the browser would report an opaque network error instead of a readable 429.
+  - Limits: chat 20/min, backtest 10/min, ingest 10/min, upload 10/min, auth (login+register) 10/min.
+  - `RATE_LIMIT_ENABLED` (default true) exists because `httpx`'s ASGI transport reports one client
+    address for every test, so a live budget would leak across tests; a new root `conftest.py` sets it
+    false for the suite, and `tests/test_rate_limit.py` installs the middleware on its own app instead.
+  - **Found and fixed while verifying:** `X-RateLimit-*` and `Retry-After` were invisible to the SPA.
+    Only a six-header safelist is readable cross-origin, and the frontend is a different origin, so
+    `fetch` saw `null` for all of them (measured: `[...r.headers.keys()]` returned only
+    `content-length`, `content-type`). Added `expose_headers` to `CORSMiddleware`, covering
+    `X-Request-ID` too — which had the same problem.
+
+  Verified live against the running API, not just in tests: `/ready` still `{"db":"ok","redis":"ok",
+  "status":"ok"}`; 12 logins from one IP returned `401 ×10` then `429 ×2` with
+  `{"error":{"code":"RATE_LIMIT_EXCEEDED","message":"Rate limit exceeded: 10 requests per 60s. Retry in
+  51s."}}`, `Retry-After: 51`, and `X-RateLimit-Remaining` counting `9,8,7,…,0`; a new window let the
+  same IP through again. Identity separation confirmed by dumping the real Redis keys after a mixed run:
+  `ratelimit:backtest:user:d689837c-…:1788619080 = 3` alongside `ratelimit:backtest:ip:127.0.0.1:1788619080 = 1`,
+  both `ttl=30` — the authenticated caller and the anonymous one were counted in different buckets on the
+  same route. 12 new tests in `tests/test_rate_limit.py` (window arithmetic, per-identity budgets, window
+  rollover, `reset_after` countdown, fail-open with a broken client, 429 envelope + headers, headers on
+  allowed responses, unmatched route, method specificity, bearer-vs-IP identity, forged token degrading to
+  the IP bucket, and a `DEFAULT_RULES` guard so renaming a route can't silently drop its limit).
+  Suite: **81 passed**, exit 0, coverage 66%. Ruff clean.
 - **Task 11 — recharts equity curve: done.** Each COMPLETED row on the Backtests page now expands to an
   area chart of its stored `equity_curve` (`Show chart` / `Hide chart`, `aria-expanded` +
   `aria-controls`). Details worth knowing:

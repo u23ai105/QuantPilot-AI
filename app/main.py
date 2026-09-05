@@ -1,4 +1,5 @@
 import uuid
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request
@@ -6,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.health import router as health_router
+from app.api.middleware import RateLimitMiddleware
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import (
@@ -14,6 +16,7 @@ from app.core.exceptions import (
     quantpilot_exception_handler,
 )
 from app.core.logging import setup_logging
+from app.core.rate_limit import RateLimiter
 
 setup_logging()
 logger = structlog.get_logger(__name__)
@@ -31,7 +34,21 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.app_name, version="0.1.0", description="QuantPilot AI API")
+    limiter = RateLimiter(settings.redis_url) if settings.rate_limit_enabled else None
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        yield
+        if limiter is not None:
+            await limiter.close()
+
+    app = FastAPI(title=settings.app_name, version="0.1.0", description="QuantPilot AI API", lifespan=lifespan)
+
+    # Added first, so it ends up *innermost*: Starlette builds the stack so the last-added middleware
+    # is outermost. A 429 raised outside CORSMiddleware would carry no `Access-Control-Allow-Origin`,
+    # and the browser would surface it as an opaque network error instead of a readable 429.
+    if limiter is not None:
+        app.add_middleware(RateLimitMiddleware, limiter=limiter)
 
     cors_origins = settings.cors_origins
     if isinstance(cors_origins, str):
@@ -45,6 +62,10 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Only a short safelist of response headers is readable from JS cross-origin, and the SPA is
+        # served from a different origin than the API. Without this the browser silently hides the
+        # rate-limit budget and the request id from `fetch`.
+        expose_headers=["X-Request-ID", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"],
     )
 
     app.add_middleware(RequestIdMiddleware)

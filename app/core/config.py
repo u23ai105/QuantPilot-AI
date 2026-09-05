@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str | list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
+    #: Set false to skip installing `RateLimitMiddleware`. The test suite does this: it shares one
+    #: client identity across every test, so real per-minute budgets would leak between tests.
+    rate_limit_enabled: bool = True
+
     # Gemini AI
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
