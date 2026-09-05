@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -43,19 +43,38 @@ async def create_backtest(
 
 
 @router.get(
+    "",
+    response_model=list[BacktestResponse],
+    summary="List your backtests",
+    description="Returns the caller's backtests, newest first. Only backtests whose strategy is owned by the authenticated user are included.",
+)
+async def list_backtests(
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of backtests to return."),
+    offset: int = Query(0, ge=0, description="Number of backtests to skip, for paging."),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db_session),
+):
+    service = BacktestService(session)
+    return await service.list_backtests(current_user.id, limit=limit, offset=offset)
+
+
+@router.get(
     "/{backtest_id}",
     response_model=BacktestResponse,
-    responses={404: {"description": "Backtest not found"}},
+    summary="Get a backtest",
+    description="Fetch a single backtest by id, including its current status. Backtests owned by another user "
+    "return 404 (not 403) so ids cannot be enumerated.",
+    responses={404: {"description": "Backtest not found, or not owned by the caller"}},
 )
 async def get_backtest(
     backtest_id: int,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
-    # Depending on requirements, we should probably check if the strategy belongs to current_user
-    # But for simplicity, if they know the backtest_id they can view it.
     service = BacktestService(session)
-    backtest = await service.get_backtest(backtest_id)
+    # Ownership-scoped lookup: backtest ids are sequential, so an unscoped read would let any
+    # authenticated user walk other users' backtests by guessing ids.
+    backtest = await service.get_backtest(backtest_id, current_user.id)
     if not backtest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backtest not found")
     return backtest
@@ -64,8 +83,11 @@ async def get_backtest(
 @router.get(
     "/{backtest_id}/results",
     response_model=BacktestResultResponse,
+    summary="Get backtest results",
+    description="Performance metrics, equity curve and trade list for a COMPLETED backtest. Returns 400 while the "
+    "run is still QUEUED/RUNNING, and 404 if the backtest is missing or owned by another user.",
     responses={
-        404: {"description": "Backtest or result not found"},
+        404: {"description": "Backtest or result not found, or not owned by the caller"},
         400: {"description": "Backtest is not completed"},
     },
 )
@@ -75,7 +97,7 @@ async def get_backtest_results(
     session: AsyncSession = Depends(get_db_session),
 ):
     service = BacktestService(session)
-    backtest = await service.get_backtest_with_result(backtest_id)
+    backtest = await service.get_backtest_with_result(backtest_id, current_user.id)
 
     if not backtest:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backtest not found")

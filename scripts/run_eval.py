@@ -8,7 +8,7 @@ from sqlalchemy import select
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 # Import the context var from ai.tools.documents where it is defined,
 # or define it locally and mock it out if needed.
@@ -102,9 +102,12 @@ async def run_evaluation(only_unscored: bool = False, question_ids: list[int] | 
                 formatted_chunks = []
 
             # 2. Agent Execution
+            # The instruction must be a SystemMessage: production sends the system prompt in the
+            # system role, so passing it as a HumanMessage here would score a different prompt
+            # structure than the app actually uses.
             inputs = {
                 "messages": [
-                    HumanMessage(
+                    SystemMessage(
                         content="You are QuantPilot AI. Always use the search_documents tool to "
                         "find the exact figures in the user's documents. Explicitly cite "
                         "the document filename and page number in your final response using the exact format: "

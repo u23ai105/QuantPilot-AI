@@ -45,8 +45,7 @@ class BacktestService:
         min_date, max_date = coverage
         if data.start_date > max_date or data.end_date < min_date:
             raise ValueError(
-                f"No price data for {data.symbol} between {data.start_date} and {data.end_date}. "
-                f"Available range: {min_date} to {max_date}."
+                f"No price data for {data.symbol} between {data.start_date} and {data.end_date}. Available range: {min_date} to {max_date}."
             )
 
         backtest = Backtest(
@@ -71,8 +70,12 @@ class BacktestService:
 
         return created_bt
 
-    async def get_backtest(self, backtest_id: int) -> Backtest | None:
-        return await self.repo.get_by_id(backtest_id)
+    async def get_backtest(self, backtest_id: int, user_id: uuid.UUID) -> Backtest | None:
+        """Ownership-scoped: a backtest belonging to another user reads as not-found."""
+        return await self.repo.get_by_id(backtest_id, user_id=user_id)
 
-    async def get_backtest_with_result(self, backtest_id: int) -> Backtest | None:
-        return await self.repo.get_with_result(backtest_id)
+    async def get_backtest_with_result(self, backtest_id: int, user_id: uuid.UUID) -> Backtest | None:
+        return await self.repo.get_with_result(backtest_id, user_id=user_id)
+
+    async def list_backtests(self, user_id: uuid.UUID, limit: int = 50, offset: int = 0) -> list[Backtest]:
+        return await self.repo.list_for_user(user_id, limit=limit, offset=offset)

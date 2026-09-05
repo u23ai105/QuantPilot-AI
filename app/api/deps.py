@@ -11,7 +11,7 @@ from app.core.db import get_db_session
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.app_env}/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
 async def get_current_user(session: AsyncSession = Depends(get_db_session), token: str = Depends(oauth2_scheme)) -> User:
