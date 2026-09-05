@@ -73,6 +73,16 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
   --cov-fail-under=63` and uploads `coverage.xml` as an artifact. Measured baseline from a real run:
   **65%** (2251 statements, 692 missed, 420 branches, 62 partial). The 63% floor is set just below the
   measured value so CI catches a genuine regression without tripping on noise.
+- **Task 8 — remove MemorySaver: done.** The graph now compiles with no checkpointer. It wasn't merely
+  redundant: `handle_message` already rebuilds the entire history from Postgres each turn, and
+  `add_messages` merges by message id, so the DB-rebuilt messages (fresh ids every turn) made the
+  checkpointed thread accumulate **another full copy of the conversation on every request** — unbounded,
+  and invisible with more than one worker since `MemorySaver` is per-process. Also dropped the now
+  meaningless `thread_id` from `config`, replacing it with tracing `metadata` (conversation + user id).
+  Updated the three places that documented the old design: `AI_ARCHITECTURE.md` §6 (rewritten, with the
+  `PostgresSaver` note now warning that a future checkpointer also requires switching to append-only
+  turns), its §2.4 compile snippet, and `CLAUDE.md`. Verified: graph compiles with `checkpointer = None`,
+  the reloaded API returns `/ready` = `{"db":"ok","redis":"ok","status":"ok"}`, suite still 69 passed.
 
 ## Blocked
 

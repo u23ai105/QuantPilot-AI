@@ -77,7 +77,7 @@ graph.add_conditional_edges(
     },
 )
 graph.add_edge("tool_node", "agent_node")
-compiled_graph = graph.compile(checkpointer=MemorySaver())
+compiled_graph = graph.compile()  # no checkpointer — see §6
 ```
 
 ---
@@ -377,39 +377,53 @@ sequenceDiagram
 
 ---
 
-## 6. Conversation State and Checkpointing
+## 6. Conversation State
 
 ### 6.1 Architecture
 
+PostgreSQL is the single source of conversation state. The graph is compiled **without** a checkpointer.
+
 ```text
-AgentService
+AgentService.handle_message
     ↓
-LangGraph compiled_graph.invoke(state, config={"configurable": {"thread_id": conversation_id}})
+persist user message → messages table
     ↓
-MemorySaver checkpointer
+reload full history ← messages table
     ↓
-In-memory state (keyed by conversation_id)
+LangGraph compiled_graph.astream_events({"messages": [...]}, config={"metadata": {...}})
+    ↓
+persist assistant response → messages table
 ```
 
-### 6.2 Thread Mapping
+### 6.2 Why no checkpointer
 
-- Each QuantPilot **conversation** maps to a LangGraph **thread**
-- `thread_id = conversation.id` (UUID)
-- MemorySaver stores full message history in memory per thread
-- Allows user to reference earlier context within the same conversation
+The original design compiled with `MemorySaver` and keyed threads by `conversation_id`. That was
+removed: because `handle_message` already rebuilds the entire history from Postgres on every turn, the
+checkpointer contributed nothing and caused harm.
 
-### 6.3 Persistence Dual-Write
+- **Not shared** — `MemorySaver` lives in the process, so it is useless with more than one
+  worker/replica; a follow-up request served by another process saw an empty thread.
+- **Unbounded** — every thread's messages were retained for the lifetime of the process, with no
+  eviction.
+- **Duplicated history** — `add_messages` merges by message id, but the DB-rebuilt `HumanMessage`/
+  `AIMessage` objects get fresh ids each turn, so the checkpointed thread accumulated another copy of
+  the whole conversation on every request.
 
-Messages are persisted in **two places**:
+`config` now carries only `metadata` (conversation and user id) for tracing. There is no `thread_id`,
+because without a checkpointer there is no thread to resume.
 
-1. **LangGraph MemorySaver** — for agent context continuity (ephemeral, lost on restart)
-2. **PostgreSQL `messages` table** — for durable persistence and API retrieval
+### 6.3 Persistence
 
-On application restart, conversation history is reloaded from PostgreSQL into LangGraph state.
+Messages are persisted in exactly one place: the PostgreSQL `messages` table, which serves both agent
+context (reloaded per turn) and API retrieval.
 
-### 6.4 Future: PostgreSQL Checkpoint
+### 6.4 Future: durable checkpointing
 
-If durability becomes critical, replace `MemorySaver` with `PostgresSaver` from `langgraph-checkpoint-postgres`. The architecture supports this swap without changing the agent graph.
+If cross-turn *graph* state (beyond the message list) is ever needed — interrupts, human-in-the-loop
+approval, resumable multi-step runs — add `PostgresSaver` from `langgraph-checkpoint-postgres` rather
+than reinstating `MemorySaver`. It is durable and shared across replicas. Doing so also means
+switching `handle_message` to append only the new turn instead of replaying full history, or the
+duplication problem above returns.
 
 ---
 

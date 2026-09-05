@@ -12,7 +12,6 @@ from typing import AsyncIterator
 
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langgraph.checkpoint.memory import MemorySaver
 
 from app.ai.graph import build_graph
 from app.ai.prompts import SYSTEM_PROMPT
@@ -56,8 +55,16 @@ class AgentService:
     - Construct the Gemini model with bound tools
     - Create the LangGraph graph
     - Invoke graph execution with streaming
-    - Manage conversation context via MemorySaver
     - Inject authenticated user context into tool execution
+
+    The graph is compiled **without** a checkpointer. Conversation memory is the
+    `conversations`/`messages` tables: `handle_message` reloads the full history from
+    Postgres and passes it in on every turn, so a checkpointer adds nothing and actively
+    hurts — an in-process `MemorySaver` isn't shared across workers or replicas (so it is
+    useless the moment there is more than one), it is unbounded (every thread's history is
+    retained for the process lifetime), and because `add_messages` merges by message id
+    while the DB-rebuilt messages get fresh ids each turn, the checkpointed thread
+    accumulated a duplicate copy of the whole conversation on every request.
     """
 
     def __init__(self):
@@ -65,8 +72,7 @@ class AgentService:
         self._tools = ALL_TOOLS
         self._model_with_tools = self._provider.bind_tools(self._tools)
         self._graph = build_graph(self._model_with_tools, self._tools)
-        self._checkpointer = MemorySaver()
-        self._compiled = self._graph.compile(checkpointer=self._checkpointer)
+        self._compiled = self._graph.compile()
 
     async def handle_message(
         self,
@@ -99,8 +105,9 @@ class AgentService:
         # 3. Set authenticated user context for tool authorization
         set_current_user_id(user_id)
 
-        # 4. Invoke LangGraph with streaming
-        config = {"configurable": {"thread_id": str(conversation_id)}}
+        # 4. Invoke LangGraph with streaming. No thread_id: without a checkpointer there is no
+        # thread to resume, so the ids serve only to correlate this run in traces/logs.
+        config = {"metadata": {"conversation_id": str(conversation_id), "user_id": str(user_id)}}
         full_response = ""
 
         logger.info(
