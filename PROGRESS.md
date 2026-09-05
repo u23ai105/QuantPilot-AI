@@ -44,6 +44,13 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
   deployment section from `render.yaml`. Removed the MIT badge and softened the license section: there
   is **no** committed `LICENSE` file and `pyproject.toml` declares no `license` field, so the old
   "See `LICENSE`" line pointed at nothing.
+- **Task 6 — delete Vite scaffolding: done.** Removed `frontend/src/App.tsx`, `App.css`,
+  `assets/react.svg`, `assets/vite.svg`. Confirmed unreferenced first: `main.tsx` mounts
+  `RouterProvider` and imports only `index.css`, and a grep for those four paths outside `App.*` found
+  nothing (`hero.png` is kept — it is the only asset still imported). Also fixed `frontend/index.html`,
+  whose `<title>` was still the template default `frontend`; it now reads `QuantPilot AI`. Verified
+  `npx tsc -b` clean, `npm run build` succeeds, and the running app renders `/login` with the new
+  title (checked via the preview channel, no new console errors).
 
 ## Blocked
 
