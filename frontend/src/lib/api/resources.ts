@@ -53,7 +53,8 @@ export interface BacktestResultResponse {
   max_drawdown: number;
   win_rate: number | null;
   total_trades: number;
-  equity_curve: Record<string, unknown>[];
+  /** `{date, value}` points, in chronological order — see `PerformanceCalculator` in `app/domain/metrics.py`. */
+  equity_curve: { date: string; value: number }[];
   trades: Record<string, unknown>[];
   created_at: string;
 }

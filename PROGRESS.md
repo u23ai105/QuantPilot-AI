@@ -115,6 +115,30 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
   with `_test` (idempotent if it already ends in `_test`, and any `?query` string is preserved).
   `TEST_DATABASE_URL` still wins when set. Proof: a full 69-passed run now leaves the dev DB with all
   13 tables, head revision, and the HNSW index intact.
+- **Task 11 — recharts equity curve: done.** Each COMPLETED row on the Backtests page now expands to an
+  area chart of its stored `equity_curve` (`Show chart` / `Hide chart`, `aria-expanded` +
+  `aria-controls`). Details worth knowing:
+  - `recharts@3.2.1` added as a dependency. It is ~295 kB, so the chart component is behind
+    `React.lazy` + `Suspense` — the main bundle stayed at 834.93 kB (was 833.40 kB) instead of growing
+    to 1,129.86 kB, and `EquityCurveChart-*.js` (294.96 kB / 88.65 kB gzip) only loads on first expand.
+  - **Warmup bars are filtered out.** The worker fetches ~100 days before `start_date` to prime
+    indicators, and `next_with_warmup` suppresses trades over them, so those bars land in the stored
+    curve as a flat run at the initial capital. On a real Jan–Dec 2024 AAPL run the raw curve was 319
+    points starting 2023-09-25; the chart plots the 251 that fall inside the requested window.
+  - `isAnimationActive={false}`: recharts reveals the area by widening a clip rect, and when the chart
+    mounts inside a just-expanded row that rect stayed ~5 px wide, leaving an empty plot. Confirmed by
+    reading the `animationClipPath-*` rect width (5.09 of 1000) before the fix, 1000 after.
+  - Gradient ids come from `useId()`, not the up/down direction — SVG ids are document-global, so two
+    charts open at once with a shared id both resolved to whichever `<defs>` mounted first.
+  - A one-bar curve renders as a dot: with a single point there is no segment to stroke, so the plot
+    was empty. (Backtests #1/#2 in the dev DB are single-point rows seeded by an earlier throwaway
+    script, which is how this surfaced.)
+  - Verified live against **real** runs, not the seeded rows: submitted AAPL 2024-01-02→2024-12-31
+    (after ingesting 398 OHLCV rows from yfinance) → +2.30% return, green stroke `hsl(160 84% 39%)`,
+    251 bars, curve path spanning the full 1000 px plot; and AAPL 2024-01-02→2024-05-01 → −3.35%, red
+    stroke `hsl(0 72% 51%)`, 84 bars. With both expanded the two gradient ids differed (`_r_0_` vs
+    `_r_2_`). Hovering mid-plot produced the custom tooltip: "Feb 28, 2024 / $9,986.11 / −0.14% vs.
+    initial". `npm run build` clean (`tsc -b` included), `npm run lint` adds no new warnings.
 
 ## Blocked
 
