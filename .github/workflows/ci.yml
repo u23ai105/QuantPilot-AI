@@ -44,4 +44,13 @@ jobs:
           CELERY_RESULT_BACKEND: "redis://localhost:6379/0"
           JWT_SECRET: "ci-test-secret-do-not-use-in-prod"
           ENVIRONMENT: "test"
-        run: pytest
+        # Floor set just under the measured 65% so CI catches a real coverage regression
+        # without failing on noise. Raise it as coverage improves.
+        run: pytest --cov --cov-report=term --cov-report=xml --cov-fail-under=63
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: warn

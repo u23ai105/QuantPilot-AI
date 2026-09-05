@@ -51,6 +51,28 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
   whose `<title>` was still the template default `frontend`; it now reads `QuantPilot AI`. Verified
   `npx tsc -b` clean, `npm run build` succeeds, and the running app renders `/login` with the new
   title (checked via the preview channel, no new console errors).
+- **Task 7 — reconcile pyproject deps: done.** Audited every third-party import across
+  `app/ scripts/ tests/ alembic/` against the manifest. Four real mismatches: `sse-starlette` was
+  declared but **never imported** — the SSE endpoint is hand-rolled with `StreamingResponse`
+  (`app/api/v1/conversations.py:91`) — so it was removed; `reportlab` is imported by
+  `scripts/generate_benchmark_pdf.py:5` but was undeclared, now in the `dev` extra since it only builds
+  eval fixtures; `langchain_core` is imported directly in 9 places but only arrived transitively, now
+  declared; and `greenlet` is required by every async DB call yet SQLAlchemy only requires it
+  conditionally (`platform_machine`/extras gated), so it is now declared directly. Verified by
+  re-running `pip install -e ".[dev]"`: `Successfully installed coverage-7.16.0 pytest-cov-7.1.0
+  reportlab-5.0.1`, exit 0, nothing uninstalled. Also wrote a checker that resolved every declared
+  specifier against the installed version — all satisfied.
+- **Task 9 — pin backtesting.py upper bound: done (folded into the task 7 commit).**
+  `backtesting>=0.3.3` → `backtesting>=0.3.3,<0.7` (installed: 0.6.6). The interpreter depends on
+  library internals — which `Strategy.__dict__` entries get sliced per bar (the root cause of the
+  0-trades bug) and `finalize_trades` defaulting to False — so an unbounded major bump could silently
+  break trade generation again.
+- **Task 12 — pytest-cov: done.** Added `pytest-cov>=5.0.0` to the dev extra, plus
+  `[tool.coverage.run]`/`[tool.coverage.report]` config (branch coverage, `source = ["app"]`,
+  `show_missing`, `skip_covered`). CI now runs `pytest --cov --cov-report=term --cov-report=xml
+  --cov-fail-under=63` and uploads `coverage.xml` as an artifact. Measured baseline from a real run:
+  **65%** (2251 statements, 692 missed, 420 branches, 62 partial). The 63% floor is set just below the
+  measured value so CI catches a genuine regression without tripping on noise.
 
 ## Blocked
 

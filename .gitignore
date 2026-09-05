@@ -26,3 +26,5 @@ uploads/
 .pytest-out.txt
 scripts/_dbtask.py
 .venv/
+coverage.xml
+.pip-out.txt
