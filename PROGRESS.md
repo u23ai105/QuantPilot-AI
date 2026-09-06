@@ -214,6 +214,38 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
     `_r_2_`). Hovering mid-plot produced the custom tooltip: "Feb 28, 2024 / $9,986.11 / −0.14% vs.
     initial". `npm run build` clean (`tsc -b` included), `npm run lint` adds no new warnings.
 
+- **Task 14 — `Idempotency-Key` on backtest submission: done.** `POST /api/v1/backtests` answers 202
+  before the Celery job runs, so a double click, proxy replay, or a network error after the request was
+  received previously produced a second identical run. Now: `Idempotency-Key` header → the repeat
+  returns the original row and dispatches nothing; the same key with a different body is a 409.
+  - Real guard is the DB, not the lookup: `UniqueConstraint(strategy_id, idempotency_key)` (migration
+    `b7d2c4e19a03`), with `IntegrityError` → rollback → re-read the winner. Postgres treats NULLs as
+    distinct, so keyless submissions are unaffected and keep creating a new run each time.
+  - Scoped per strategy rather than globally, since strategies are user-owned — one caller's key can't
+    collide with another's.
+  - Ordering is a security property: the strategy-ownership check runs *before* the key lookup, or a
+    caller could probe another user's `strategy_id` and read back a run they don't own. Ticker
+    resolution also precedes it, because the stored row records `ticker_id`, not the submitted symbol,
+    so the replay comparison needs it.
+  - Found a real bug while testing the race path: after the `IntegrityError` rollback every ORM
+    instance in the session is expired, so reading `strategy.id` for the post-rollback re-read attempted
+    lazy IO and raised `MissingGreenlet`. That would have failed in production on a genuine race, not
+    just in the test. Fixed by reading `strategy_id`/`ticker_id` out as plain ints before the insert.
+  - Frontend mints one key per *intent* (`crypto.randomUUID()` in `StrategiesPage`), held across
+    failures so a "try again" click after a timeout returns the original run, and cleared on success or
+    on any form edit (a changed body with the same key is a 409 by design).
+  - 13 new tests in `tests/test_backtest_idempotency.py` (Celery `send_task` stubbed, so dispatch count
+    is directly observable): repeat key → 1 row / 1 dispatch; no key → 2 rows / 2 dispatches; different
+    keys → independent; reused key with a different `start_date`/`end_date`/`initial_capital`/
+    `commission`/`slippage`/symbol → 409 + no extra dispatch; key persisted on the row; a foreign
+    `strategy_id` 400s with zero dispatches; the same key on a different strategy is independent; and
+    the lost race returns the winner's row without queueing.
+  - Suite: **94 passed, exit=0**, coverage **67%** (`app/services/backtest_service.py` 77%). Migration
+    verified against the dev DB: `alembic upgrade head` → `b7d2c4e19a03`, column present as
+    `varchar(255)` nullable, constraint `UNIQUE (strategy_id, idempotency_key)`, HNSW index still there.
+    (`alembic check` still reports the known pgvector false positive documented in `c961f1f9fde9` — the
+    raw-SQL HNSW index isn't in `Base.metadata`, so autogenerate always wants to drop it.)
+
 ## Blocked
 
 _(none yet)_

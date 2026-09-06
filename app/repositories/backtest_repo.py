@@ -18,6 +18,16 @@ class BacktestRepository:
         await self.session.refresh(backtest)
         return backtest
 
+    async def get_by_idempotency_key(self, strategy_id: int, idempotency_key: str) -> Backtest | None:
+        """The run a previous submission created with this key, if any.
+
+        Scoped to the strategy, matching `uq_backtests_strategy_idempotency_key`. Strategy ownership
+        is already checked by the caller, so this cannot surface another user's run.
+        """
+        stmt = select(Backtest).where(Backtest.strategy_id == strategy_id, Backtest.idempotency_key == idempotency_key)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_by_id(self, backtest_id: int, user_id: uuid.UUID | None = None) -> Backtest | None:
         """Fetch a backtest. When user_id is given, only return it if the owning strategy belongs
         to that user (backtest ids are sequential, so unfiltered lookups are enumerable)."""

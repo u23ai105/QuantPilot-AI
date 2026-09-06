@@ -88,10 +88,16 @@ export const backtestsApi = {
     fetchClient<BacktestResponse[]>("/backtests", {
       params: { limit: String(limit), offset: String(offset) },
     }),
-  create: (data: BacktestCreate) =>
+  /**
+   * Submit a backtest. `idempotencyKey` makes the POST safe to repeat: the backend returns the run
+   * the first call created rather than queueing a second one (409 if the same key is sent with a
+   * different body). Generate one key per user intent, not per attempt.
+   */
+  create: (data: BacktestCreate, idempotencyKey?: string) =>
     fetchClient<BacktestResponse>("/backtests", {
       method: "POST",
       body: JSON.stringify(data),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
     }),
   get: (id: number) => fetchClient<BacktestResponse>(`/backtests/${id}`),
   getResults: (id: number) =>

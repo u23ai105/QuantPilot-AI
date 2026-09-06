@@ -10,6 +10,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -35,6 +36,10 @@ class Backtest(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="QUEUED", index=True)
     celery_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Client-supplied `Idempotency-Key`, so a retried or replayed submission returns the original run
+    #: instead of queueing a second Celery job. Scoped to the strategy rather than being globally
+    #: unique: strategies are user-owned, so this keeps one caller's key from colliding with another's.
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -48,6 +53,11 @@ class Backtest(Base):
     result: Mapped["BacktestResult"] = relationship("BacktestResult", back_populates="backtest", uselist=False, cascade="all, delete-orphan")
 
     __table_args__ = (
+        # The check-then-insert in BacktestService is not atomic, so this constraint is what actually
+        # makes double submission impossible: the loser of the race gets an IntegrityError and reads
+        # the winner's row instead of queueing a second run. Postgres treats NULLs as distinct, so
+        # submissions without a key are unaffected.
+        UniqueConstraint("strategy_id", "idempotency_key", name="uq_backtests_strategy_idempotency_key"),
         CheckConstraint("start_date < end_date", name="chk_backtests_dates"),
         CheckConstraint("initial_capital > 0", name="chk_backtests_capital"),
         CheckConstraint("commission >= 0", name="chk_backtests_commission"),

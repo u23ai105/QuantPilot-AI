@@ -1,10 +1,11 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.db import get_db_session
+from app.core.exceptions import QuantPilotException
 from app.models.user import User
 from app.schemas.backtests import (
     BacktestCreate,
@@ -22,21 +23,37 @@ router = APIRouter(prefix="/backtests", tags=["Backtests"])
     "",
     response_model=BacktestResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    summary="Submit a backtest",
+    description="Queues a backtest on the Celery `backtest` queue and returns 202 immediately with status "
+    "`QUEUED`; poll `GET /backtests/{id}` for `RUNNING → COMPLETED|FAILED`.\n\n"
+    "Send an `Idempotency-Key` header to make retries safe: a repeat with the same key returns the run the "
+    "first call created instead of queueing a second one. Reusing a key with a different body is a 409.",
     responses={
-        400: {"description": "Validation error (e.g., strategy not owned by user)"},
+        400: {"description": "Validation error (e.g., strategy not owned by user, or no price data for the window)"},
+        409: {"description": "`Idempotency-Key` reused with a different request body"},
     },
 )
 async def create_backtest(
     data: BacktestCreate,
+    idempotency_key: str | None = Header(
+        None,
+        alias="Idempotency-Key",
+        max_length=255,
+        description="Opaque client-generated key (e.g. a UUID). Scoped to the strategy; omit it to always create a new run.",
+    ),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
     service = BacktestService(session)
     try:
-        backtest = await service.create_backtest(current_user.id, data)
+        backtest = await service.create_backtest(current_user.id, data, idempotency_key=idempotency_key)
         return backtest
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except QuantPilotException:
+        # ConflictError (key reused with a different body) — let the registered handler emit the
+        # `{"error": {...}}` envelope instead of collapsing it into a 500 below.
+        raise
     except Exception:
         logger.exception("Error creating backtest")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")

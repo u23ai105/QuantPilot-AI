@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/layout/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { strategiesApi, backtestsApi } from "@/lib/api/resources";
-import type { StrategyResponse, BacktestResponse } from "@/lib/api/resources";
+import type { StrategyResponse, BacktestResponse, BacktestCreate } from "@/lib/api/resources";
 import { Plus, Code2, Play, Loader2, AlertCircle, ChevronRight } from "lucide-react";
 
 const DEFAULT_STRATEGY_JSON = JSON.stringify({
@@ -70,6 +70,25 @@ export function StrategiesPage() {
   });
   const [lastBacktest, setLastBacktest] = useState<BacktestResponse | null>(null);
   const [btError, setBtError] = useState<string | null>(null);
+  /**
+   * Idempotency key for the submission currently being attempted.
+   *
+   * Held across failures on purpose: if the POST times out or the connection drops, the backend may
+   * already have queued the run, and the obvious "try again" click would otherwise start a second
+   * one. Reusing the key makes that retry return the original run instead. Cleared on success and
+   * whenever the form changes, since a changed body with the same key is a 409 by design.
+   */
+  const idempotencyKeyRef = useRef<string | null>(null);
+
+  /** Drop the pending key — the next submit describes a different run, so it needs its own key. */
+  const resetIdempotencyKey = () => {
+    idempotencyKeyRef.current = null;
+  };
+
+  const updateBtForm = (patch: Partial<BacktestFormState>) => {
+    resetIdempotencyKey();
+    setBtForm(f => ({ ...f, ...patch }));
+  };
 
   const { data: strategies = [], isLoading, error } = useQuery({
     queryKey: ["strategies"],
@@ -86,10 +105,11 @@ export function StrategiesPage() {
   });
 
   const backtestMutation = useMutation({
-    mutationFn: backtestsApi.create,
+    mutationFn: (data: BacktestCreate) => backtestsApi.create(data, idempotencyKeyRef.current ?? undefined),
     onSuccess: (bt) => {
       setLastBacktest(bt);
       setBtError(null);
+      resetIdempotencyKey();
       // BacktestsPage reads GET /backtests, so the new run only needs a cache invalidation.
       qc.invalidateQueries({ queryKey: ["backtests"] });
     },
@@ -117,6 +137,7 @@ export function StrategiesPage() {
     setJsonError(null);
     setLastBacktest(null);
     setBtError(null);
+    resetIdempotencyKey();
   };
 
   const handleSaveNew = () => {
@@ -134,6 +155,8 @@ export function StrategiesPage() {
 
   const handleRunBacktest = () => {
     if (!selected) return;
+    // One key per intent: minted on the first attempt and kept for retries of the same submission.
+    idempotencyKeyRef.current ??= crypto.randomUUID();
     backtestMutation.mutate({
       strategy_id: selected.id,
       symbol: btForm.symbol.toUpperCase(),
@@ -245,19 +268,19 @@ export function StrategiesPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">Symbol</label>
-                    <Input value={btForm.symbol} onChange={e => setBtForm(f => ({ ...f, symbol: e.target.value }))} className="bg-background/50 h-8 text-sm" />
+                    <Input value={btForm.symbol} onChange={e => updateBtForm({ symbol: e.target.value })} className="bg-background/50 h-8 text-sm" />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">Capital ($)</label>
-                    <Input value={btForm.initial_capital} onChange={e => setBtForm(f => ({ ...f, initial_capital: e.target.value }))} className="bg-background/50 h-8 text-sm" type="number" />
+                    <Input value={btForm.initial_capital} onChange={e => updateBtForm({ initial_capital: e.target.value })} className="bg-background/50 h-8 text-sm" type="number" />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">Start Date</label>
-                    <Input value={btForm.start_date} onChange={e => setBtForm(f => ({ ...f, start_date: e.target.value }))} className="bg-background/50 h-8 text-sm" type="date" />
+                    <Input value={btForm.start_date} onChange={e => updateBtForm({ start_date: e.target.value })} className="bg-background/50 h-8 text-sm" type="date" />
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">End Date</label>
-                    <Input value={btForm.end_date} onChange={e => setBtForm(f => ({ ...f, end_date: e.target.value }))} className="bg-background/50 h-8 text-sm" type="date" />
+                    <Input value={btForm.end_date} onChange={e => updateBtForm({ end_date: e.target.value })} className="bg-background/50 h-8 text-sm" type="date" />
                   </div>
                 </div>
 
