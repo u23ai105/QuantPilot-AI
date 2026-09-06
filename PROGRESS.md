@@ -287,6 +287,45 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
   - Dev DB side effect: those probes left backtests 6–14 QUEUED (no worker running). Left in place
     rather than deleted.
 
+- **Task 16 — load test of `POST /api/v1/backtests`: done, and executed for real.** New
+  `scripts/load_test_backtests.py`. Scope is the **submission path only**: the endpoint answers 202 once
+  the row is committed and the Celery job is dispatched, so what is measured is auth, the strategy
+  ownership lookup, ticker resolution, the OHLCV coverage check, the INSERT, and the broker publish. It
+  never touches the chat or RAG endpoints — those spend Gemini quota, which is a hard external limit
+  rather than a throughput question.
+  - Two properties that make the numbers mean something. **A distinct `Idempotency-Key` per request**:
+    reusing one would make every request after the first a Task 14 replay, which skips the insert and
+    the dispatch and would measure the wrong path. And **`httpx.Limits` raised to match concurrency**:
+    the client defaults to 10 keepalive connections, which would serialize anything above that and
+    report a measurement of the client instead of the API.
+  - `--cleanup` deletes exactly the rows the run created, matched on its own key prefix
+    (`loadtest-<run-id>-`), so it cannot touch anything else in the dev DB. The target strategy and
+    symbol are read from the DB up front, so an unseeded database fails with a clear message instead of
+    producing a run of 400s that looks like a latency result.
+  - Percentiles are nearest-rank, so every number reported is an actually observed latency rather than
+    an interpolation between two samples.
+  - **Measured** (200 requests, concurrency 20, against a local backend started with
+    `RATE_LIMIT_ENABLED=false` on port 8010 — the default rule is 10 submissions/min per caller, so a
+    run against a normally-configured API measures the rate limiter, not the endpoint; the script prints
+    the 429 count either way so that mistake is visible rather than silent):
+
+    ```
+    wall clock        1.28s
+    throughput        156.3 req/s
+    status codes      {202: 200}
+
+    latency, all responses (s)
+      p50             0.0869
+      p95             0.2138
+      p99             0.2289
+      min             0.0552
+      max             0.2312
+    ```
+
+    All 200 were accepted, and `--cleanup` deleted exactly the 200 rows it created. No test asserts on
+    these figures — they are a one-off measurement of this machine against a local Postgres and Redis,
+    not a regression gate.
+
 ## Blocked
 
 _(none yet)_
