@@ -33,7 +33,9 @@ Redis. Implementation has shipped through **Phase 7 (product UI)** — see
 *   **Streaming chat** over SSE (`token`, `tool_start`, `tool_end`, `done`, `error` events), with
     durable conversation history in Postgres.
 *   **RAG over PDFs** — upload a filing, it is chunked and embedded on the Celery `embedding` queue,
-    then retrieved by cosine similarity from an HNSW pgvector index.
+    then retrieved by cosine similarity from an HNSW pgvector index. Query embeddings are cached in
+    Redis (keyed by a hash of the normalized query plus the model and dimensionality), so a repeated
+    question costs no embedding quota; a cache miss or a Redis outage just recomputes.
 *   **Eval harness** (`app/services/eval_service.py`) — scores answers deterministically: normalized
     string match, numeric match with tolerance, retrieval hit@k, and citation checks against the
     canonical `[Source: <filename>, Page: <n>]` format.
@@ -58,9 +60,9 @@ Redis. Implementation has shipped through **Phase 7 (product UI)** — see
 *   **Observability** — structlog with a per-request `X-Request-ID`, `GET /health` (liveness),
     `GET /ready` (checks Postgres + Redis), and `GET /metrics` in Prometheus exposition format:
     request counts and latency histograms labelled by *route template* (so ids never become label
-    values), rate-limit rejections by rule, and backtest submissions split into queued vs.
-    idempotent replay. Open by default for a scraper on a private network; set `METRICS_TOKEN` to
-    require a bearer token.
+    values), rate-limit rejections by rule, backtest submissions split into queued vs. idempotent
+    replay, and query-embedding cache hits vs. misses. Open by default for a scraper on a private
+    network; set `METRICS_TOKEN` to require a bearer token.
 
 ---
 

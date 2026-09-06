@@ -326,6 +326,46 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
     these figures — they are a one-off measurement of this machine against a local Postgres and Redis,
     not a regression gate.
 
+- **Task 17 — Redis caching for RAG query embeddings: done, no live Gemini call made.** New
+  `app/core/cache.py` (a general `RedisJSONCache` + a module-singleton client, disposed from the app
+  lifespan) and `app/ai/embedding_cache.py` (`CachedQueryEmbedder`, wired into `RetrievalService`).
+  - Scope is **query** embeddings only. Every `RetrievalService.search` has to embed the question before
+    it can run the pgvector search, and that is a billed Gemini call — while the same text under the same
+    model always yields the same vector, and queries genuinely repeat (the eval harness replays a fixed
+    question set, the agent calls `search_documents` more than once per turn, users rephrase and re-ask).
+    Document embeddings are deliberately *not* cached: they are computed once at ingestion and stored in
+    `document_chunks.embedding`, which already is the cache.
+  - Key: SHA-256 of the whitespace-normalized query, plus the model id and output dimensionality —
+    exported from `app/ai/embedding.py` as `EMBEDDING_MODEL`/`EMBEDDING_DIMENSIONS` so the two cannot
+    drift apart. Hashed so key length is bounded and Redis holds no readable record of what was asked.
+    Case is *not* folded (embeddings are case-sensitive, so folding would serve a vector for text that
+    was never embedded). Not scoped per user either: the vector is a pure function of the text, and the
+    ownership filter that decides which chunks a caller may see is in the SQL (`search_user_chunks`), so
+    two users asking the same question share one entry and still get only their own documents back.
+  - A decoded hit is validated (list, right length, numeric) before use, and an entry that fails is
+    treated as a miss and overwritten. Without that, an entry written under a different dimensionality
+    would be handed to a `Vector(768)` comparison and fail inside the SQL query instead of degrading to a
+    recompute. Symmetrically, a bad vector from the embedder is never written.
+  - Fail-open, matching the rate limiter: a Redis outage turns every lookup into a miss and every write
+    into a no-op. A cache guards cost, not correctness, and `/ready` already reports Redis health.
+  - 24-hour TTL — long, because the text→vector mapping never changes for a fixed model; the TTL is there
+    to reclaim space for one-off questions, not to bound staleness. New metric
+    `quantpilot_query_embedding_cache_total{outcome=hit|miss}`, so the saving is observable rather than
+    assumed; absent / Redis-down / unusable all count as one `miss`, since the question the metric
+    answers is "how many API calls did the cache fail to save".
+  - 20 new tests in `tests/test_embedding_cache.py`, all against a fake Redis and a **counting stub
+    embedder** — no test makes a live embedding call, so "N identical queries cost 1 call" is directly
+    asserted. Covers the JSON round trip, mandatory TTL, fail-open on a broken client, an undecodable
+    entry, key normalization/case-sensitivity/model+dimension inclusion/no-plaintext, wrong-dimension and
+    non-numeric entries being recomputed, a bad embedder result never being cached, the hit/miss
+    counters, and that `RetrievalService` actually wires the wrapper.
+  - Suite: **126 passed, exit=0**, coverage **68%**.
+  - Verified against the real dev Redis (still no Gemini call — counting stub as the embedder): two
+    spellings of the same query returned identical 768-length vectors for **1** embedder call, the key
+    was present with a **86400s** TTL, a deleted key read back as a miss, and pointing the cache at a
+    dead port (`redis://127.0.0.1:6399/0`) logged `cache_unavailable` for both get and set and still
+    returned a 768-length vector.
+
 ## Blocked
 
 _(none yet)_

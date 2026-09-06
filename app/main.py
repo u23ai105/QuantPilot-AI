@@ -9,6 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.api.health import router as health_router
 from app.api.middleware import MetricsMiddleware, RateLimitMiddleware
 from app.api.v1.router import api_router
+from app.core.cache import close_cache
 from app.core.config import settings
 from app.core.exceptions import (
     QuantPilotException,
@@ -41,6 +42,9 @@ def create_app() -> FastAPI:
         yield
         if limiter is not None:
             await limiter.close()
+        # The query-embedding cache holds a lazily created connection pool; nothing to close if no
+        # retrieval request ever ran.
+        await close_cache()
 
     app = FastAPI(title=settings.app_name, version="0.1.0", description="QuantPilot AI API", lifespan=lifespan)
 

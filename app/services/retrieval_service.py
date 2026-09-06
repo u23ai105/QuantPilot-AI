@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.embedding import GeminiEmbeddingAdapter
+from app.ai.embedding_cache import CachedQueryEmbedder
 from app.repositories.document_repo import DocumentRepository
 from app.schemas.documents import ChunkWithCitation
 
@@ -11,7 +12,10 @@ from app.schemas.documents import ChunkWithCitation
 class RetrievalService:
     def __init__(self, session: AsyncSession):
         self.repo = DocumentRepository(session)
-        self.embedding_adapter = GeminiEmbeddingAdapter()
+        # Wrapped in the Redis cache: the query embedding is a paid Gemini call and a pure function of
+        # the text, so a repeated question should not spend quota twice. Falls through to the adapter on
+        # a miss or if Redis is unreachable — see `app/ai/embedding_cache.py`.
+        self.embedding_adapter = CachedQueryEmbedder(GeminiEmbeddingAdapter())
 
     async def search(self, user_id: UUID, query: str, limit: int = 5, document_id: int | None = None) -> list[ChunkWithCitation]:
         # Enforce document ownership if document_id is provided

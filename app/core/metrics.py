@@ -64,6 +64,13 @@ backtest_submissions_total = Counter(
     registry=REGISTRY,
 )
 
+query_embedding_cache_total = Counter(
+    "quantpilot_query_embedding_cache_total",
+    "RAG query-embedding cache lookups by outcome: a hit served from Redis, or a miss that spent an embedding API call.",
+    ["outcome"],
+    registry=REGISTRY,
+)
+
 #: Label value for requests that matched no route. Without this collapse, every 404 from a scanner
 #: probing `/wp-login.php`-style paths would add a permanent series. FastAPI's own docs routes
 #: (`/docs`, `/openapi.json`) also land here — they are served without a `route` in the request scope —
