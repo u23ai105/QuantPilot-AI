@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageContainer } from "@/components/layout/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,33 +6,62 @@ import { Input } from "@/components/ui/input";
 import { marketApi } from "@/lib/api/resources";
 import { Search, TrendingUp, TrendingDown, AlertCircle, Loader2 } from "lucide-react";
 
+/** `GET /market-data/{symbol}` requires an explicit window. Five years back covers whatever has been
+ *  ingested; the table still shows only the latest 10 bars. */
+function defaultWindow() {
+  const end = new Date();
+  const start = new Date(end);
+  start.setFullYear(start.getFullYear() - 5);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+/**
+ * Trading days of warm-up the indicator endpoint demands *strictly before* its `start` date.
+ *
+ * `IndicatorService._get_lookback_days` needs `period` rows for SMA and `2 * period` for RSI, and
+ * rejects the request outright when they are missing. So the indicator window cannot simply reuse
+ * the OHLCV window — asking from the earliest stored bar leaves zero rows ahead of it and 400s.
+ */
+const INDICATOR_WARMUP_BARS = 40;
+
 export function MarketPage() {
   const [search, setSearch] = useState("AAPL");
   const [activeSymbol, setActiveSymbol] = useState("AAPL");
+  // Memoised so the dates stay stable across renders — a fresh `end` every render would change the
+  // query key each time and refetch forever.
+  const { start, end } = useMemo(defaultWindow, []);
 
   const { isLoading: tickersLoading } = useQuery({
     queryKey: ["tickers"],
     queryFn: () => marketApi.getTickers(),
   });
 
-  const { data: ohlcv, isLoading: ohlcvLoading, error: ohlcvError } = useQuery({
-    queryKey: ["ohlcv", activeSymbol],
-    queryFn: () => marketApi.getTickerData(activeSymbol),
+  const { data: marketData, isLoading: ohlcvLoading, error: ohlcvError } = useQuery({
+    queryKey: ["ohlcv", activeSymbol, start, end],
+    queryFn: () => marketApi.getTickerData(activeSymbol, start, end),
     enabled: !!activeSymbol,
     retry: false,
   });
 
-  const { data: sma } = useQuery({
-    queryKey: ["indicator", activeSymbol, "sma"],
-    queryFn: () => marketApi.getIndicators(activeSymbol, "sma", { period: "20" }),
-    enabled: !!activeSymbol,
+  // The response envelope wraps the series in `bars`, so unwrap before indexing.
+  const bars = marketData?.bars ?? [];
+
+  // Indicators start far enough into the stored history to satisfy the backend's warm-up check.
+  const hasWarmup = bars.length > INDICATOR_WARMUP_BARS;
+  const indicatorStart = hasWarmup ? bars[INDICATOR_WARMUP_BARS].date : undefined;
+  const indicatorEnd = bars.length > 0 ? bars[bars.length - 1].date : undefined;
+
+  const { data: sma, error: smaError } = useQuery({
+    queryKey: ["indicator", activeSymbol, "sma", indicatorStart, indicatorEnd],
+    queryFn: () => marketApi.getIndicators(activeSymbol, "sma", indicatorStart!, indicatorEnd!, { period: "20" }),
+    enabled: hasWarmup,
     retry: false,
   });
 
-  const { data: rsi } = useQuery({
-    queryKey: ["indicator", activeSymbol, "rsi"],
-    queryFn: () => marketApi.getIndicators(activeSymbol, "rsi", { period: "14" }),
-    enabled: !!activeSymbol,
+  const { data: rsi, error: rsiError } = useQuery({
+    queryKey: ["indicator", activeSymbol, "rsi", indicatorStart, indicatorEnd],
+    queryFn: () => marketApi.getIndicators(activeSymbol, "rsi", indicatorStart!, indicatorEnd!, { period: "14" }),
+    enabled: hasWarmup,
     retry: false,
   });
 
@@ -41,12 +70,18 @@ export function MarketPage() {
     if (search.trim()) setActiveSymbol(search.trim().toUpperCase());
   };
 
-  const latestOhlcv = ohlcv && ohlcv.length > 0 ? ohlcv[ohlcv.length - 1] : null;
-  const prevOhlcv = ohlcv && ohlcv.length > 1 ? ohlcv[ohlcv.length - 2] : null;
+  const latestOhlcv = bars.length > 0 ? bars[bars.length - 1] : null;
+  const prevOhlcv = bars.length > 1 ? bars[bars.length - 2] : null;
   const isUp = latestOhlcv && prevOhlcv ? latestOhlcv.close >= prevOhlcv.close : true;
 
-  const latestSma = sma && sma.length > 0 ? sma[sma.length - 1].value : null;
-  const latestRsi = rsi && rsi.length > 0 ? rsi[rsi.length - 1].value : null;
+  const smaPoints = sma?.points ?? [];
+  const rsiPoints = rsi?.points ?? [];
+  const latestSma = smaPoints.length > 0 ? smaPoints[smaPoints.length - 1].value : null;
+  const latestRsi = rsiPoints.length > 0 ? rsiPoints[rsiPoints.length - 1].value : null;
+  // A pending indicator query only spins while it can actually run: with too little history the
+  // backend would reject it, so show a dash instead of a spinner that never resolves.
+  const smaPending = hasWarmup && sma === undefined && !smaError;
+  const rsiPending = hasWarmup && rsi === undefined && !rsiError;
 
   return (
     <PageContainer title="Market Data" description="Explore OHLCV data and technical indicators.">
@@ -106,8 +141,10 @@ export function MarketPage() {
         <Card className="bg-background/50 border-border/50">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">SMA (20)</p>
-            {sma === undefined ? <Loader2 className="h-4 w-4 animate-spin" /> : (
-              <span className="text-lg font-medium">{latestSma ? latestSma.toFixed(2) : "—"}</span>
+            {/* Spin only while genuinely in flight: a failed query also leaves `data` undefined, and
+                spinning on that looked like a hang rather than an error. */}
+            {smaPending ? <Loader2 className="h-4 w-4 animate-spin" /> : (
+              <span className="text-lg font-medium">{latestSma != null ? latestSma.toFixed(2) : "—"}</span>
             )}
           </CardContent>
         </Card>
@@ -115,8 +152,8 @@ export function MarketPage() {
         <Card className="bg-background/50 border-border/50">
           <CardContent className="p-4 flex flex-col justify-center h-full">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">RSI (14)</p>
-            {rsi === undefined ? <Loader2 className="h-4 w-4 animate-spin" /> : (
-              <span className="text-lg font-medium">{latestRsi ? latestRsi.toFixed(2) : "—"}</span>
+            {rsiPending ? <Loader2 className="h-4 w-4 animate-spin" /> : (
+              <span className="text-lg font-medium">{latestRsi != null ? latestRsi.toFixed(2) : "—"}</span>
             )}
           </CardContent>
         </Card>
@@ -146,13 +183,15 @@ export function MarketPage() {
                     <td colSpan={6} className="p-8 text-center text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></td>
                   </tr>
                 )}
-                {!ohlcvLoading && (!ohlcv || ohlcv.length === 0) && (
+                {!ohlcvLoading && bars.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted-foreground">No data available.</td>
+                    <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                      {ohlcvError ? "Could not load bars." : `No bars stored for ${activeSymbol} yet.`}
+                    </td>
                   </tr>
                 )}
-                {ohlcv && ohlcv.slice(-10).reverse().map((row, i) => (
-                  <tr key={i} className="hover:bg-secondary/20 transition-colors">
+                {bars.slice(-10).reverse().map(row => (
+                  <tr key={row.date} className="hover:bg-secondary/20 transition-colors">
                     <td className="p-4 py-3 text-muted-foreground">{row.date}</td>
                     <td className="p-4 py-3 text-right">${row.open.toFixed(2)}</td>
                     <td className="p-4 py-3 text-right">${row.high.toFixed(2)}</td>

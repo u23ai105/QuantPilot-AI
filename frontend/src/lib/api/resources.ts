@@ -115,13 +115,14 @@ export const documentsApi = {
     fetchClient<void>(`/documents/${id}`, { method: "DELETE" }),
 };
 
+/** `TickerResponse` in `app/schemas/market_data.py` — the symbol is the identifier, there is no id. */
 export interface TickerResponse {
-  id: number;
   symbol: string;
   name: string;
+  sector: string | null;
 }
 
-export interface OHLCVResponse {
+export interface OHLCVBar {
   date: string;
   open: number;
   high: number;
@@ -130,21 +131,33 @@ export interface OHLCVResponse {
   volume: number;
 }
 
-export interface IndicatorResponse {
+/** `GET /market-data/{symbol}` returns an envelope, not a bare array. */
+export interface MarketDataResponse {
+  symbol: string;
+  count: number;
+  bars: OHLCVBar[];
+}
+
+export interface IndicatorPoint {
   date: string;
-  value: number | null;
+  value: number;
+}
+
+/** `GET /indicators/{symbol}` for the single-series indicators (sma, ema, rsi, atr). */
+export interface IndicatorResponse {
+  symbol: string;
+  indicator: string;
+  points: IndicatorPoint[];
 }
 
 export const marketApi = {
   getTickers: () => fetchClient<TickerResponse[]>("/market-data/tickers"),
-  getTickerData: (symbol: string, start?: string, end?: string) => 
-    fetchClient<OHLCVResponse[]>(`/market-data/${symbol}`, { 
-      params: { ...(start && { start_date: start }), ...(end && { end_date: end }) } 
-    }),
-  getIndicators: (symbol: string, indicator: string, params: Record<string, string>) => 
-    fetchClient<IndicatorResponse[]>(`/indicators/${symbol}`, { 
-      params: { indicator, ...params } 
-    }),
+  // `start` and `end` are required by the router (and named exactly that, not `start_date`), so
+  // they are required here too: omitting them produced a 422 that surfaced as "failed to load".
+  getTickerData: (symbol: string, start: string, end: string) =>
+    fetchClient<MarketDataResponse>(`/market-data/${symbol}`, { params: { start, end } }),
+  getIndicators: (symbol: string, indicator: string, start: string, end: string, params: Record<string, string> = {}) =>
+    fetchClient<IndicatorResponse>(`/indicators/${symbol}`, { params: { indicator, start, end, ...params } }),
 };
 
 export interface ConversationResponse {

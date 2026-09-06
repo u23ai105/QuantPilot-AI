@@ -115,6 +115,39 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
   with `_test` (idempotent if it already ends in `_test`, and any `?query` string is preserved).
   `TEST_DATABASE_URL` still wins when set. Proof: a full 69-passed run now leaves the dev DB with all
   13 tables, head revision, and the HNSW index intact.
+- **Market Data page was fully broken (defect reported by the user mid-run, not a numbered task).**
+  Every request the page made was rejected, so it showed "Failed to load market data", `$—` for close
+  and volume, and two spinners that never resolved. Five distinct frontend/contract mismatches, all
+  confirmed against the running API with the page's own token before fixing:
+  - **No dates sent.** `getTickerData(activeSymbol)` passed no window, but `start`/`end` are required
+    query params → `422 {"loc":["query","start"],"msg":"Field required"}`. That 422 was the red banner.
+  - **Wrong param names.** `resources.ts` sent `start_date`/`end_date`; the router declares `start`/`end`
+    (this was the mismatch already noted as out-of-scope earlier in the run). Same 422; with the correct
+    names the same URL returns 251 bars.
+  - **Indicators had the same missing-window bug**, so SMA/RSI 422'd too. With `retry: false` the query
+    just left `data === undefined`, and the cards spun on `undefined` rather than on a real loading flag
+    — a permanent spinner that read as a hang instead of an error.
+  - **Response shapes were wrong.** Both endpoints return envelopes — `{"symbol","count","bars":[…]}`
+    and `{"symbol","indicator","points":[…]}` — but the frontend typed them as bare arrays and did
+    `ohlcv.length` / `ohlcv[ohlcv.length-1]`, which is `undefined` on an object. So even with the params
+    fixed the table would still have said "No data available". `TickerResponse` was wrong too: it
+    declared `id: number` and no `sector`, while the endpoint returns `{symbol, name, sector}`.
+  - **Indicator warm-up.** Reusing the OHLCV window for indicators still 400s:
+    `IndicatorService._get_lookback_days` requires `period` prior trading days for SMA and `2*period`
+    for RSI, and asking from the earliest stored bar leaves zero rows ahead of it —
+    `"Insufficient historical data for sma warm-up. Required 20 trading days prior to 2021-09-06, but
+    found 0."` Fixed by starting the indicator window at the 41st stored bar (`INDICATOR_WARMUP_BARS = 40`,
+    enough for RSI-14's 28) and gating the queries on `bars.length > 40`, so a thinly-ingested symbol
+    shows a dash instead of a spinner that can never resolve.
+
+  Verified live on `/market` after the fix: banner gone, `LATEST CLOSE $250.38 / 1.33%`,
+  `VOLUME 35,557,500`, `SMA (20) 247.47`, `RSI (14) 60.23`, 10 table rows newest-first
+  (2024-12-30 → 2024-12-16), zero spinners. Cross-checked those same numbers straight from the API:
+  398 bars stored, indicator window 2023-07-31 → 2024-12-30, last SMA point 247.472095, last RSI
+  60.22566910607216 — the UI is rendering real backend output, not a coincidence. Error path re-checked
+  by searching `MSFT` (in the fixed universe but never ingested): banner returns, all four cards show
+  `—`, the table reads "Could not load bars.", still zero spinners; searching `AAPL` again restores the
+  data. `tsc -b` and `npm run build` clean, `npm run lint` reports nothing in the changed files.
 - **Task 13 — Redis rate limiting: done.** There was no rate limiting anywhere before this (grep found
   only aspirational mentions in `docs/`), so chat, backtest submission, ingestion and login were all
   unbounded. Added `app/core/rate_limit.py` (fixed-window `RateLimiter` over Redis) and
