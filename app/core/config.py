@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     #: client identity across every test, so real per-minute budgets would leak between tests.
     rate_limit_enabled: bool = True
 
+    #: When set, `GET /metrics` requires `Authorization: Bearer <token>`. Empty means open, which is
+    #: fine when the port is only reachable from inside the deployment's network (the Render setup) and
+    #: is what a local Prometheus expects; set it whenever the API is exposed directly.
+    metrics_token: str = ""
+
     # Gemini AI
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"

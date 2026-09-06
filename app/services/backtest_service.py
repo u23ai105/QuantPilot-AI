@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import metrics
 from app.core.exceptions import ConflictError
 from app.models.backtest import Backtest
 from app.models.strategy import Strategy
@@ -79,6 +80,7 @@ class BacktestService:
             existing = await self.repo.get_by_idempotency_key(strategy_id, idempotency_key)
             if existing is not None:
                 _assert_replay_matches(existing, data, ticker_id, idempotency_key)
+                metrics.backtest_submissions_total.labels(outcome="replayed").inc()
                 return existing
 
         if data.start_date >= data.end_date:
@@ -120,7 +122,10 @@ class BacktestService:
             existing = await self.repo.get_by_idempotency_key(strategy_id, idempotency_key)
             if existing is None:
                 raise
+            metrics.backtest_submissions_total.labels(outcome="replayed").inc()
             return existing
+
+        metrics.backtest_submissions_total.labels(outcome="queued").inc()
 
         # Dispatch celery task
         task = celery_app.send_task("tasks.run_backtest", args=[created_bt.id], queue="backtest")

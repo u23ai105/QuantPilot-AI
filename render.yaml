@@ -30,6 +30,11 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         sync: false
+      # A Render web service is reachable from the public internet, so /metrics must not be open here:
+      # it would expose route names and traffic volumes to anyone. Generated rather than left blank —
+      # read the value from the Render dashboard and give it to the scraper.
+      - key: METRICS_TOKEN
+        generateValue: true
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL

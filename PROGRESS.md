@@ -246,6 +246,47 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
     (`alembic check` still reports the known pgvector false positive documented in `c961f1f9fde9` — the
     raw-SQL HNSW index isn't in `Base.metadata`, so autogenerate always wants to drop it.)
 
+- **Task 15 — Prometheus `/metrics`: done.** New `app/core/metrics.py` (registry + counters/histogram),
+  `app/api/middleware/metrics.py` (recording middleware), and the route on the root health router next
+  to `/health` and `/ready`, since scrapers expect `/metrics` outside `/api/v1`.
+  - Hand-rolled rather than an auto-instrumentation package, for **label cardinality**. A Prometheus
+    series is created per unique label combination and lives in memory forever, so labelling by raw
+    request path would mint a permanent series per backtest id and per scanner-probed URL. Everything
+    labels by the matched route *template*, and unmatched requests collapse into one `<unmatched>`
+    bucket.
+  - Getting that label right took a fix: Starlette's `route.path` is relative to the router the route
+    was included from, so it read `/backtests/{backtest_id}` with no `/api/v1`, which would collide
+    across routers. `route_label` recovers the prefix by aligning the template's segments to the *end*
+    of the concrete path. Substituting parameter values into the path instead would misfire when a value
+    equals a prefix segment.
+  - Exported: `quantpilot_http_requests_total` (method/route/status), `..._request_duration_seconds`
+    (histogram, buckets skewed low since most endpoints are tens-of-ms DB reads),
+    `..._requests_exceptions_total`, `..._rate_limit_rejections_total{rule}` (by rule name, not caller —
+    per-caller would be unbounded), and `..._backtest_submissions_total{outcome=queued|replayed}`, which
+    makes the Task 14 idempotency feature observable.
+  - Middleware is added last in `create_app`, so it is outermost: timing covers the whole stack and a
+    429 or an escaped exception is still counted. `/metrics` excludes itself — a 15s scrape would
+    otherwise dominate the counters and make the histogram describe the scrape.
+  - Auth: open by default (what a scraper on a private network expects), gated behind
+    `Authorization: Bearer <METRICS_TOKEN>` when that setting is non-empty, compared with
+    `hmac.compare_digest` so the timing doesn't leak a prefix match. `render.yaml` sets
+    `METRICS_TOKEN: generateValue: true`, because a Render web service is publicly reachable.
+  - Dependency: `prometheus-client>=0.20.0` (resolved to 0.26.0). `.env.example` and the README
+    observability section updated.
+  - 12 new tests in `tests/test_metrics.py`, aimed at what fails silently: ten distinct ids produce one
+    route label, three bogus paths produce one `<unmatched>` series, the mount prefix is present,
+    `/metrics` is absent from its own counters, and the token gate rejects missing/wrong/non-bearer
+    credentials. Suite: **106 passed, exit=0**, coverage **68%**.
+  - Verified live against the running backend, not just in tests: `/metrics` returned
+    `text/plain; version=1.0.0`, ids 424242 and 999111 collapsed onto
+    `route="/api/v1/backtests/{backtest_id}"`, `/definitely-not-a-route` landed in `<unmatched>`. A
+    13-submission burst (rule is 10/60s, 2 already spent) gave 8×202 then 5×429 with
+    `rate_limit_rejections_total{rule="backtest"} 5.0`, and submissions read
+    `{outcome="queued"} 9.0` / `{outcome="replayed"} 1.0` — the replay from a repeated
+    `Idempotency-Key` returning backtest id 6 twice.
+  - Dev DB side effect: those probes left backtests 6–14 QUEUED (no worker running). Left in place
+    rather than deleted.
+
 ## Blocked
 
 _(none yet)_

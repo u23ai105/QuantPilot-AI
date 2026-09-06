@@ -55,8 +55,12 @@ Redis. Implementation has shipped through **Phase 7 (product UI)** — see
     resources (chat, backtest submission, ingestion, upload) plus login/register. Keyed by user id
     when a bearer token is present, client IP otherwise; responses carry `X-RateLimit-*` and a 429
     carries `Retry-After`. Fails open if Redis is down, since it guards cost, not access.
-*   **Observability** — structlog with a per-request `X-Request-ID`, `GET /health` (liveness) and
-    `GET /ready` (checks Postgres + Redis).
+*   **Observability** — structlog with a per-request `X-Request-ID`, `GET /health` (liveness),
+    `GET /ready` (checks Postgres + Redis), and `GET /metrics` in Prometheus exposition format:
+    request counts and latency histograms labelled by *route template* (so ids never become label
+    values), rate-limit rejections by rule, and backtest submissions split into queued vs.
+    idempotent replay. Open by default for a scraper on a private network; set `METRICS_TOKEN` to
+    require a bearer token.
 
 ---
 
@@ -164,6 +168,7 @@ npm --prefix frontend run dev      # http://localhost:5173
 ```bash
 curl http://localhost:8000/health
 curl http://localhost:8000/ready
+curl http://localhost:8000/metrics
 ```
 
 ### 8. Testing & Linting

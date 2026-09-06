@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.health import router as health_router
-from app.api.middleware import RateLimitMiddleware
+from app.api.middleware import MetricsMiddleware, RateLimitMiddleware
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import (
@@ -69,6 +69,10 @@ def create_app() -> FastAPI:
     )
 
     app.add_middleware(RequestIdMiddleware)
+
+    # Added last, so it is outermost: the timing then covers the entire stack, and a 429 from the rate
+    # limiter or an exception escaping the handlers is still counted.
+    app.add_middleware(MetricsMiddleware)
 
     app.add_exception_handler(QuantPilotException, quantpilot_exception_handler)
     app.add_exception_handler(Exception, global_exception_handler)

@@ -14,6 +14,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.core import metrics
 from app.core.rate_limit import RateLimiter, RateLimitRule
 from app.core.security import decode_token_subject
 
@@ -73,6 +74,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         if not verdict.allowed:
             logger.info("rate_limited", rule=rule.name, path=request.url.path)
+            # Labelled by rule name, not identity: a per-caller label would be unbounded cardinality,
+            # and "which route group is being throttled" is the operational question anyway.
+            metrics.rate_limit_rejections_total.labels(rule=rule.name).inc()
             return JSONResponse(
                 status_code=429,
                 content={

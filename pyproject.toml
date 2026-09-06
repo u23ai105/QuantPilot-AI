@@ -34,6 +34,9 @@ dependencies = [
     # SQLAlchemy only requires greenlet for some platforms/extras, but every async DB call
     # here goes through it — declare it directly so no platform resolves without it.
     "greenlet>=3.0.0",
+    # Prometheus exposition for GET /metrics. The plain client, not an instrumentator wrapper:
+    # the metrics here are hand-rolled so the HTTP label set stays bounded (see app/core/metrics.py).
+    "prometheus-client>=0.20.0",
 ]
 
 [project.optional-dependencies]
