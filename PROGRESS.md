@@ -10,10 +10,10 @@ cannot reach Postgres, so DB-backed tests only run there). Baseline at start of 
 broken Market Data page) — with this summary as the closing commit. Task 0 was environment bring-up and
 produced no code. Three tasks were grouped where the work was one change: `2-4`, `7,9,12`, `19,20`.
 
-The suite went from **63 passed to 126 passed** on the last full DB-backed run (coverage **68%**), and
-the growth is the point: nearly every task added tests that would catch its own regression rather than
-just making the change. Tasks 18–19 added 5 more, so **131** is now collected — those 5 need no
-database and pass in the sandbox, but a full 131-test run has not been observed (see Blocked).
+The suite went from **63 passed to 131 passed** (coverage **68%**), and the growth is the point: nearly
+every task added tests that would catch its own regression rather than just making the change. The full
+131 were confirmed green on 2026-10-02, after the run, in a normal terminal with Docker up —
+`pytest -q --cov --cov-report=term` → `131 passed in 23.14s`, zero failures, zero errors.
 
 What each task left behind, in one line each:
 
@@ -485,8 +485,10 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
     `StreamingResponse(..., media_type="text/event-stream")` (`content-type: text/event-stream;
     charset=utf-8`), so `tests/test_conversations.py:83` cannot have regressed; and the new Celery event
     flags only add an event publish on the broker the task dispatch already uses.
-  - To confirm the full 131, with `docker compose up db redis -d` running:
-    `pytest -q --cov --cov-report=term`.
+  - **Resolved after the run (2026-10-02).** The full suite was run in a normal terminal with
+    `docker compose up db redis -d` and the venv active: **131 passed, 68% coverage, in 23.14s** — no
+    failures, no errors, so tasks 18–20 changed nothing the DB-backed tests object to. The two
+    hand-verifications above held.
 - **End-of-run cleanup.** The scaffolding this run needed to work around the sandbox is gone: the six
   `.*-out.txt` capture files and `scripts/_dbtask.py` deleted, the seven temporary `.claude/launch.json`
   entries removed (`dbtask`, `migrate-cycle`, `pipinstall`, `npminstall`, `backend-nolimit`, `loadtest`,
@@ -500,14 +502,13 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
 **Nothing.** No task was blocked, abandoned or reverted — the "revert after 2 failed fix attempts"
 rule was never invoked, and every numbered task 0–20 is committed.
 
-One caveat that is *not* a block but is the weakest evidence in this run: the full DB-backed suite
-could not be re-run for **tasks 18–20**, because the preview channel (the only route to Postgres from
-this sandbox) was unavailable for the rest of the run. What did run for those three: `ruff check` and
-`ruff format --check` clean over 182 files, and **82 of 131 tests passed** — every test that needs no
-database, including all 5 added by tasks 18–19 — with the other 49 erroring on the sandbox's
-`PermissionError` when connecting to 127.0.0.1:5432, not on anything in the diff. The two runtime
-behaviour changes in that span were hand-verified instead (see the suite note under task 20). Confirm
-the full 131 with `docker compose up db redis -d` and `pytest -q --cov --cov-report=term`.
+One caveat held open at the end of the run, now **closed**: the full DB-backed suite could not be
+re-run for **tasks 18–20**, because the preview channel (the only route to Postgres from the sandbox)
+was unavailable. In-sandbox those three had `ruff check`/`ruff format --check` clean over 182 files and
+**82 of 131 tests passing** — every test needing no database — with the other 49 erroring on the
+sandbox's `PermissionError` connecting to 127.0.0.1:5432, not on anything in the diff. On 2026-10-02
+the suite was run outside the sandbox and came back **131 passed, 68% coverage, 23.14s**, confirming
+the three tasks broke nothing.
 
 ## Deferred — needs live API quota
 
