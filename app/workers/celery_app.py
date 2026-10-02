@@ -23,4 +23,12 @@ celery_app.conf.update(
         "tasks.run_backtest": {"queue": "backtest"},
         "app.workers.embedding_task.embed_document": {"queue": "embedding"},
     },
+    # Task events, which is what Flower reads (see the `flower` service in docker-compose.yml).
+    # Without these the dashboard still lists workers and queues but shows no tasks at all, since
+    # Celery emits nothing by default. `worker_send_task_events` covers started/succeeded/failed;
+    # `task_send_sent_event` is emitted by the *publisher*, so a task that is queued but never
+    # picked up — a worker started without `--queues=backtest`, say — is visible as sent-but-not-
+    # received instead of vanishing.
+    worker_send_task_events=True,
+    task_send_sent_event=True,
 )

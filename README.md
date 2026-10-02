@@ -62,7 +62,8 @@ Redis. Implementation has shipped through **Phase 7 (product UI)** — see
     request counts and latency histograms labelled by *route template* (so ids never become label
     values), rate-limit rejections by rule, backtest submissions split into queued vs. idempotent
     replay, and query-embedding cache hits vs. misses. Open by default for a scraper on a private
-    network; set `METRICS_TOKEN` to require a bearer token.
+    network; set `METRICS_TOKEN` to require a bearer token. Celery has its own dashboard — Flower,
+    at `:5555` under compose — for queue depth and task history.
 
 ---
 
@@ -173,7 +174,26 @@ curl http://localhost:8000/ready
 curl http://localhost:8000/metrics
 ```
 
-### 8. Testing & Linting
+### 8. Watching the queues (Flower)
+
+`docker compose up` already starts Flower on <http://localhost:5555> — queue depth per queue, task
+history with arguments and runtimes, and worker heartbeats. It is how you tell "the backtest is
+slow" apart from "nothing is consuming the `backtest` queue".
+
+Running the worker outside Docker instead? Point Flower at the same broker:
+
+```bash
+celery -A app.workers.celery_app flower --port=5555
+```
+
+Flower reads Celery *task events*, which `app/workers/celery_app.py` turns on
+(`worker_send_task_events`, `task_send_sent_event`). Without them the dashboard lists workers but
+no tasks.
+
+It is deliberately development-only and absent from `render.yaml`: the dashboard has no
+authentication, its API can revoke and terminate tasks, and task arguments are shown in plain text.
+
+### 9. Testing & Linting
 
 The test suite is **not hermetic** — `tests/conftest.py` connects to a real Postgres with pgvector and
 drops/recreates all tables per test, so `docker compose up db redis -d` must be running first.
@@ -185,7 +205,7 @@ pytest
 pytest tests/test_auth.py::test_login_success    # single test
 ```
 
-### 9. RAG evaluation
+### 10. RAG evaluation
 
 Seed the question set first, then run the harness (both make live LLM/embedding calls):
 
@@ -198,10 +218,15 @@ python scripts/run_eval.py
 
 ## 🚢 Deployment
 
-`render.yaml` declares the deployment: a web service for the API (with
-`releaseCommand: alembic upgrade head`), a Celery worker, managed Redis, and a static frontend build.
-Secrets (`DATABASE_URL`, `GEMINI_API_KEY`, `JWT_SECRET`, `CORS_ORIGINS`) are set in the Render
-dashboard, not committed.
+`render.yaml` declares the whole deployment: a web service for the API (with
+`releaseCommand: alembic upgrade head`), a Celery worker, managed Redis, managed Postgres, and a
+static frontend build. Postgres and Redis are provisioned by the blueprint, so `DATABASE_URL`,
+`REDIS_URL` and the Celery broker/backend URLs are wired automatically — `JWT_SECRET` and
+`METRICS_TOKEN` are generated, and only the genuinely external values (`GEMINI_API_KEY`,
+`CORS_ORIGINS`, `VITE_API_BASE_URL`) have to be filled in from the Render dashboard.
+
+The database is pinned to Postgres 16 to match the local `pgvector/pgvector:pg16` image, and the
+`vector` extension is created by the first migration rather than by hand.
 
 ---
 

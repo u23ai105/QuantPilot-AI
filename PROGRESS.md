@@ -365,6 +365,72 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
     was present with a **86400s** TTL, a deleted key read back as a miss, and pointing the cache at a
     dead port (`redis://127.0.0.1:6399/0`) logged `cache_unavailable` for both get and set and still
     returned a 768-length vector.
+- **Task 18 — OpenAPI descriptions on every endpoint: done.** All 24 operations now carry a `summary`,
+  a `description` and a `responses` map: the six `/api/v1` routers plus `/health` and `/ready` (the
+  `/metrics` route was already documented in task 15).
+  - Every claim was checked against the source rather than written from memory, which caught four
+    wrong ones before they shipped: `/auth/register` fails with **409 + 422**, not 400; the indicator
+    defaults are period 20 for SMA/**EMA**/Bollinger, not just SMA/Bollinger; `/market-data/{symbol}/ingest`
+    treats `end` as **exclusive** (that is what yfinance does — `app/infrastructure/yfinance_adapter.py`),
+    unlike the two read endpoints where it is inclusive; and chat messages do **not** populate
+    `citations_json` (it is always null — citations are inline in the answer text as
+    `[Source: <filename>, Page: <n>]`).
+  - Two substantive fixes fell out of documenting the behaviour. `POST /api/v1/backtests` is rate
+    limited but documented no 429. And the SSE chat endpoint advertised `application/json` — FastAPI
+    infers the content type from the response class and `StreamingResponse.media_type` is `None` — so
+    the one content type it never returns was the only one in the schema. Fixed with a three-line
+    `SSEResponse` subclass that carries `media_type` on the class.
+  - `tests/test_openapi.py` (4 tests) keeps it from going stale: every operation must have a summary
+    and description, the SSE route must document `text/event-stream` only and its 403/404/429/502, and
+    the documented 429s must agree with the limiter's `DEFAULT_RULES` **in both directions** — a limited
+    endpoint without a documented 429, or a documented 429 on an unlimited endpoint, both fail. That
+    cross-check is what found the backtests gap. These tests read the generated schema, so they are the
+    only ones in the suite that need no Postgres.
+- **Task 19 — Flower for Celery monitoring: done.** A `flower` service in `docker-compose.yml`
+  (`mher/flower:2.0`, <http://localhost:5555>), `flower` in the `dev` extra for running it without
+  Docker, and docs in README §8 and CLAUDE.md.
+  - The part that actually matters is in `app/workers/celery_app.py`: `worker_send_task_events=True`
+    and `task_send_sent_event=True`. Celery emits no task events by default, so a Flower service added
+    on its own would have shown workers and queues but an empty task list — the dashboard would look
+    installed and be useless. The publisher-side event is the one that makes a task queued to a queue
+    nobody consumes (a worker started without `--queues=backtest`, the failure mode CLAUDE.md warns
+    about) visible as sent-but-never-received. `tests/test_worker.py` asserts both flags, since
+    nothing else would catch their removal.
+  - Flower runs from its own image rather than ours, so the api and worker images stay free of a
+    monitoring dependency, and it is deliberately **not** in `render.yaml`: no auth, an API that can
+    revoke and terminate tasks, and task arguments visible in plain text — the same reasoning that put
+    `METRICS_TOKEN` on `/metrics` in task 15.
+- **Task 20 — managed Postgres in `render.yaml`: done.** Added the top-level `databases:` block
+  (`quantpilot-db`, Postgres **16** to match the local `pgvector/pgvector:pg16` image, `ipAllowList: []`
+  so nothing outside the blueprint can connect) and switched `DATABASE_URL` on **both** the API and the
+  worker from `sync: false` to `fromDatabase`/`connectionString`.
+  - Field names and semantics verified against Render's blueprint spec, not assumed: `connectionString`
+    resolves to `postgresql://user:password@host:port/database` over the private network — which is
+    exactly why it can be consumed verbatim, since the validator on `settings.database_url` rewrites
+    that scheme to `postgresql+asyncpg://`. `postgresMajorVersion` is a string and immutable, and an
+    empty `ipAllowList` blocks all external connections whereas omitting the key allows any IP that has
+    the credentials. pgvector needs no manual step: `alembic upgrade head` runs as the owner and the
+    first RAG migration does `CREATE EXTENSION IF NOT EXISTS vector`.
+  - Net effect: a blueprint sync now provisions everything stateful and wires it up. The only values
+    left to set by hand are the genuinely external ones — `GEMINI_API_KEY`, `CORS_ORIGINS`,
+    `VITE_API_BASE_URL`.
+- **Suite note for tasks 18–20 — the full suite could NOT be run for these three.** The preview channel
+  is the only way to reach Postgres from here (the Bash sandbox refuses loopback sockets:
+  `PermissionError` on 127.0.0.1:5432), and it was unavailable for the rest of this run — every call
+  returned "claude-opus-5 is temporarily unavailable, so auto mode cannot determine the safety of
+  mcp__Claude_Browser__preview_start", across ~15 minutes of retries. Reported rather than worked
+  around, per CLAUDE.md.
+  - What *did* run, in-sandbox: `ruff check .` and `ruff format --check .` clean over 182 files, and the
+    **82 tests that need no database — 82 passed**, which includes all five new ones (4 in
+    `tests/test_openapi.py`, 1 in `tests/test_worker.py`). The other 49 error at fixture setup with the
+    sandbox `PermissionError`, which is the socket policy, not a failure. Total is 131 tests, up from 126.
+  - Also checked by hand, since these are the only runtime-behaviour changes in the three tasks and both
+    are covered by DB-backed tests: `SSEResponse(...)` emits byte-identical headers to the previous
+    `StreamingResponse(..., media_type="text/event-stream")` (`content-type: text/event-stream;
+    charset=utf-8`), so `tests/test_conversations.py:83` cannot have regressed; and the new Celery event
+    flags only add an event publish on the broker the task dispatch already uses.
+  - To confirm the full 131, with `docker compose up db redis -d` running:
+    `pytest -q --cov --cov-report=term`.
 
 ## Blocked
 

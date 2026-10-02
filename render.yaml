@@ -10,7 +10,9 @@ services:
       - key: APP_ENV
         value: production
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: quantpilot-db
+          property: connectionString
       - key: REDIS_URL
         fromService:
           type: redis
@@ -50,7 +52,9 @@ services:
       - key: APP_ENV
         value: production
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: quantpilot-db
+          property: connectionString
       - key: REDIS_URL
         fromService:
           type: redis
@@ -84,3 +88,25 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         sync: false
+
+# 5. Managed Postgres
+#
+# Declared here rather than left as a `sync: false` secret so a blueprint sync provisions the database
+# and wires `DATABASE_URL` into both the API and the worker itself. `fromDatabase`/`connectionString`
+# yields `postgresql://user:password@host:port/database` over Render's private network; the validator
+# on `settings.database_url` rewrites that scheme to `postgresql+asyncpg://`, which is why the URL can
+# be consumed verbatim.
+#
+# pgvector needs no manual step: the first migration runs `CREATE EXTENSION IF NOT EXISTS vector`, and
+# the release command (`alembic upgrade head`) runs it as the owner created below. The major version is
+# pinned to match the `pgvector/pgvector:pg16` image used locally, so dev and production agree; both
+# `postgresMajorVersion` and `databaseName`/`user` are immutable once the instance exists.
+databases:
+  - name: quantpilot-db
+    databaseName: quantpilot
+    user: quantpilot
+    plan: free
+    postgresMajorVersion: "16"
+    # Empty list = no external connections at all; only services in this blueprint can reach it.
+    # Omitting the key would instead allow any IP that has the credentials.
+    ipAllowList: []

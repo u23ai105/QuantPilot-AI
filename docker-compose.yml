@@ -54,6 +54,20 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/1
 
+  # Celery dashboard — queue depths, task history, worker heartbeats — at http://localhost:5555.
+  # Reads the task events the worker emits (enabled in app/workers/celery_app.py), so it needs only
+  # the broker, not the app image or the database. Development only: Flower has no auth here and its
+  # API can revoke and terminate tasks, and task arguments (user ids, strategy ids) are visible in
+  # plain text — which is why there is no Flower service in render.yaml.
+  flower:
+    image: mher/flower:2.0
+    command: celery --broker=redis://redis:6379/0 --result-backend=redis://redis:6379/1 flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+
   db:
     image: pgvector/pgvector:pg16
     ports:

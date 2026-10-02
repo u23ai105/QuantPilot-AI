@@ -48,6 +48,10 @@ dev = [
     "ruff>=0.3.0",
     # scripts/generate_benchmark_pdf.py only — building eval fixtures, not needed at runtime.
     "reportlab>=4.0.0",
+    # Celery dashboard, for watching queues and task history locally. A dev dependency on purpose:
+    # the api and worker images have no reason to carry it, and compose runs Flower from its own
+    # image (see the `flower` service) rather than from ours.
+    "flower>=2.0.0",
 ]
 
 [tool.setuptools.packages.find]

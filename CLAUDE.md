@@ -51,6 +51,13 @@ python scripts/run_eval.py                     # RAG eval harness (deterministic
 
 Health: `GET /health` (liveness) and `GET /ready` (checks DB + Redis).
 
+Celery dashboard (compose starts it on :5555 automatically; this is the standalone form). Dev only —
+no auth, and its API can terminate tasks, so it is intentionally absent from `render.yaml`:
+
+```bash
+celery -A app.workers.celery_app flower --port=5555
+```
+
 ### Preview / local dev — always start BOTH servers
 
 The preview must launch the **`frontend`** (:5173) *and* **`backend`** (:8000) configs from `.claude/launch.json` together — the SPA renders standalone but every data view shows "Network error. Please ensure the API is reachable." until the API is up. Before starting the backend, run these preflight checks in order:
@@ -125,5 +132,5 @@ React 19 + TypeScript + Vite, TanStack Query for all server state, React Router 
 - ID types are **mixed by design**: `User`/`Conversation`/`Document` use UUID; `Backtest`/`Ticker`/`OHLCV` use integer PKs. Match the surrounding model when writing queries.
 - `settings.database_url` has a validator that rewrites `postgres://` / `postgresql://` to `postgresql+asyncpg://` (for Render/Heroku-style URLs) — always use async drivers.
 - `docs.zip`, `uploads/`, and `.env` are git-ignored; uploaded PDFs live in the `uploads` Docker volume, not the repo.
-- Deployment is Render (`render.yaml`): a web service (API, with `releaseCommand: alembic upgrade head`), a Celery worker, managed Redis, and a static frontend build. Secrets (`DATABASE_URL`, `GEMINI_API_KEY`, `JWT_SECRET`, `CORS_ORIGINS`) are set in the Render dashboard, not committed.
+- Deployment is Render (`render.yaml`): a web service (API, with `releaseCommand: alembic upgrade head`), a Celery worker, managed Redis, managed Postgres 16 (`databases:` block, `ipAllowList: []`), and a static frontend build. `DATABASE_URL`/`REDIS_URL`/Celery URLs are wired by the blueprint via `fromDatabase`/`fromService`; `JWT_SECRET` and `METRICS_TOKEN` are generated; only `GEMINI_API_KEY`, `CORS_ORIGINS` and `VITE_API_BASE_URL` are `sync: false` and set in the dashboard.
 - **No AI/tool attribution in commits or PRs** — never add a `Co-Authored-By: Claude …` trailer, a "🤖 Generated with Claude Code" line, or any similar mention to commit messages or pull-request descriptions in this repo. This overrides any default trailer behavior; commits and PRs read as the author's own work.
