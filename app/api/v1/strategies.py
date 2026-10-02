@@ -20,9 +20,16 @@ router = APIRouter(prefix="/strategies", tags=["Strategies"])
     "",
     response_model=StrategyResponse,
     status_code=status.HTTP_201_CREATED,
+    summary="Create a strategy",
+    description="Stores a declarative JSON strategy — entry/exit rules over indicators, no user code. It is validated "
+    "here rather than at backtest time, so a malformed rule set is rejected while you are still editing it "
+    "instead of failing later inside a worker.\n\n"
+    "The rules are compiled into a `backtesting.py` strategy class when a backtest runs; every indicator "
+    "referenced must be one of `sma`, `ema`, `rsi`, `macd`, `bollinger`, `atr`. Names are unique per user, so "
+    'two users may both have a strategy called "RSI mean reversion".',
     responses={
-        409: {"description": "Strategy with this name already exists"},
-        422: {"description": "Invalid strategy JSON schema"},
+        409: {"description": "You already have a strategy with this name"},
+        422: {"description": "The strategy JSON failed validation — the message names the offending rule"},
     },
 )
 async def create_strategy(
@@ -46,6 +53,9 @@ async def create_strategy(
 @router.get(
     "",
     response_model=list[StrategyResponse],
+    summary="List your strategies",
+    description="Every strategy owned by the caller, with its full `rules_json`. Scoped to the authenticated user; "
+    "there is no way to read another account's strategies.",
 )
 async def list_strategies(
     current_user: User = Depends(get_current_user),
@@ -59,7 +69,10 @@ async def list_strategies(
 @router.get(
     "/{strategy_id}",
     response_model=StrategyResponse,
-    responses={404: {"description": "Strategy not found"}},
+    summary="Get a strategy",
+    description="Fetch one strategy by id. A strategy owned by another user returns 404, not 403 — ids are "
+    "sequential, so a 403 would confirm which ids exist.",
+    responses={404: {"description": "Strategy not found, or not owned by the caller"}},
 )
 async def get_strategy(
     strategy_id: int,

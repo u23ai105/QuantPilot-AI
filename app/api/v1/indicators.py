@@ -20,21 +20,34 @@ router = APIRouter()
 @router.get(
     "/{symbol}",
     response_model=IndicatorResponse | IndicatorMultiResponse,
+    summary="Calculate an indicator",
+    description="Computes one indicator over stored bars for `[start, end]`. Deterministic: the same inputs always "
+    "give the same values, calculated by the pure functions in `app/domain/indicators.py`.\n\n"
+    "Warm-up is handled for you — the service reads extra bars *before* `start` so the first returned value is "
+    "already converged, rather than the artefact you would get by starting the calculation at `start`. Which "
+    "parameters apply depends on the indicator; irrelevant ones are ignored, and omitted ones take the "
+    "conventional default (period 20 for SMA/EMA/Bollinger, 14 for RSI/ATR, 12/26/9 for MACD, 2.0 std dev).\n\n"
+    "The response shape follows the indicator: single-valued ones (`sma`, `ema`, `rsi`, `atr`) return "
+    "`points[].value`, while multi-valued ones (`macd`, `bollinger`) return `points[].values` keyed by line "
+    "name.",
+    responses={
+        400: {"description": "Unknown indicator, non-positive period, or MACD `fast` not less than `slow`"},
+        404: {"description": "Symbol has never been ingested"},
+    },
 )
 async def get_indicator(
     symbol: str,
     indicator: Literal["sma", "ema", "rsi", "macd", "bollinger", "atr"] = Query(..., description="Indicator name"),
     start: datetime.date = Query(..., description="Start date (inclusive)"),
     end: datetime.date = Query(..., description="End date (inclusive)"),
-    period: int | None = Query(None, description="Period (for SMA/EMA/RSI/BB/ATR)"),
-    fast: int | None = Query(None, description="MACD fast period"),
-    slow: int | None = Query(None, description="MACD slow period"),
-    signal: int | None = Query(None, description="MACD signal period"),
-    std_dev: float | None = Query(None, description="Bollinger standard deviation"),
+    period: int | None = Query(None, description="Lookback window for SMA, EMA, RSI, Bollinger and ATR. Ignored for MACD."),
+    fast: int | None = Query(None, description="MACD fast EMA period. Must be less than `slow`."),
+    slow: int | None = Query(None, description="MACD slow EMA period."),
+    signal: int | None = Query(None, description="MACD signal-line EMA period."),
+    std_dev: float | None = Query(None, description="Bollinger band width in standard deviations."),
     session: AsyncSession = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ):
-    """Calculate and return indicator values."""
     service = IndicatorService(session)
 
     # Collect params

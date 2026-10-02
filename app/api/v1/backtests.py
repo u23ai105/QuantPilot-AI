@@ -31,6 +31,7 @@ router = APIRouter(prefix="/backtests", tags=["Backtests"])
     responses={
         400: {"description": "Validation error (e.g., strategy not owned by user, or no price data for the window)"},
         409: {"description": "`Idempotency-Key` reused with a different request body"},
+        429: {"description": "Rate limit exceeded (10 per minute per caller, since each run occupies a worker) — see `Retry-After`"},
     },
 )
 async def create_backtest(

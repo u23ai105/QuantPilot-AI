@@ -11,12 +11,24 @@ from app.core.db import engine
 router = APIRouter()
 
 
-@router.get("/health")
+@router.get(
+    "/health",
+    summary="Liveness probe",
+    description='Returns `{"status": "ok"}` if the process is up. Touches nothing external, so it stays 200 while '
+    "Postgres or Redis is down — use `/ready` to decide whether to send traffic.",
+)
 async def health_check():
     return {"status": "ok"}
 
 
-@router.get("/ready")
+@router.get(
+    "/ready",
+    summary="Readiness probe",
+    description="Checks the dependencies the app cannot work without and reports each one: `SELECT 1` against Postgres "
+    'and a `PING` against Redis, as `{"db": ..., "redis": ..., "status": ...}`.\n\n'
+    'Note the status code is **200 either way** — a failed dependency shows up as `"db": "down"` with a '
+    'top-level `"status": "error"`, not as a 503, so a probe must read the body rather than the code.',
+)
 async def readiness_check():
     status = {"db": "unknown", "redis": "unknown", "status": "ok"}
     is_ready = True
