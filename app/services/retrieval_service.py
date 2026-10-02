@@ -35,12 +35,9 @@ class RetrievalService:
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Embedding provider error: {str(e)}")
 
-        # Search chunks
-        # The repo returns a sequence of (DocumentChunk, similarity_score, filename)
-        # We must filter by user_id if document_id is None, to prevent searching other users' docs.
-        # Wait, the repo method `search_chunks` doesn't filter by user_id!
-        # Let's update search_chunks in DocumentRepository or handle it here.
-        # It's safer to handle it in DocumentRepository. I'll modify search_chunks.
+        # Ownership is enforced inside the query, not after it: `search_user_chunks` joins on the owning
+        # document and filters by user_id, so another account's chunks can never win a similarity
+        # comparison in the first place.
         results = await self.repo.search_user_chunks(user_id, query_embedding, limit, document_id)
 
         citations = []

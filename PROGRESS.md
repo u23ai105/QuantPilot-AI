@@ -3,6 +3,61 @@
 Test command used for every task: full `pytest` suite via the preview channel (the Bash sandbox
 cannot reach Postgres, so DB-backed tests only run there). Baseline at start of run: **63 passed**.
 
+## Final summary
+
+**Tasks 0–20: all 21 done. Nothing blocked, nothing reverted, nothing abandoned.** The code landed in
+16 commits, `ea1fe0e`..`6cb5df1` — 15 numbered-task commits plus one unnumbered UI fix (`81537a6`, the
+broken Market Data page) — with this summary as the closing commit. Task 0 was environment bring-up and
+produced no code. Three tasks were grouped where the work was one change: `2-4`, `7,9,12`, `19,20`.
+
+The suite went from **63 passed to 131**, and the growth is the point: nearly every task added tests
+that would catch its own regression rather than just making the change. Coverage at the last full run
+was 68%.
+
+What each task left behind, in one line each:
+
+| # | Change | Evidence it works |
+| :-- | :-- | :-- |
+| 0 | Environment brought up | 13 tables, alembic at head, `/ready` all-ok |
+| 1 | HNSW index recreated in the migration instead of dropped | `pg_indexes` showed the index live after `upgrade head` |
+| 2 | `SystemMessage` in the eval harness | code committed; **run deferred, needs quota** |
+| 3 | Backtest ownership scoping | 6 tests: cross-user **404** on both read endpoints, list scoped |
+| 4 | OAuth2 `tokenUrl` corrected | literal `/api/v1/auth/login`; the env name no longer leaks into it |
+| 5 | README rewritten to match shipped code | three verified staleness bugs (phase, model ids, "Planned") |
+| 6 | Vite template scaffolding deleted | unreferenced first, then `tsc -b` + `npm run build` clean, `/login` renders |
+| 7, 9, 12 | Deps reconciled, `backtesting` upper-bounded, `pytest-cov` added | coverage report produced |
+| 8 | `MemorySaver` removed; Postgres is the only conversation state | graph compiles with `checkpointer = None`, `/ready` all-ok, suite still green |
+| 10 | Disabled UI elements wired up; tests stopped dropping the dev DB | each of the 5 items checked live, incl. the `/ready` degraded branch |
+| 11 | Equity-curve chart on backtest rows | live run: 251 of 319 curve points plotted, chart lazy-loaded |
+| 13 | Redis per-caller rate limiting | 429 + `Retry-After` tests, fail-open test |
+| 14 | Idempotent backtest submission | replay returns the first run, 409 on key reuse |
+| 15 | `/metrics` with bounded label cardinality | label-template tests, live scrape |
+| 16 | Load test of the submission path | **measured**: 156.3 req/s, p95 0.214s, 200/200 → 202 |
+| 17 | Redis cache for RAG query embeddings | "N queries → 1 embedding call" asserted; live Redis + dead-port check |
+| 18 | OpenAPI docs on all 24 operations | 4 schema tests, incl. docs-vs-limiter cross-check |
+| 19 | Flower + the task events it needs | both event flags asserted in `tests/test_worker.py` |
+| 20 | Managed Postgres in `render.yaml` | fields verified against Render's blueprint spec |
+
+Three things are **configured but never executed in this run**, and that distinction matters more than
+the checkmarks above:
+
+- The **eval harness** (task 2) — a deliberate choice, see the deferred section below.
+- **Flower** (task 19) was never started: launching it needs either Docker (socket unreachable from the
+  sandbox) or a `pip install flower` through the preview channel, which was down. The compose service,
+  the dependency and the event flags are in place and the flags are unit-tested; the dashboard itself is
+  unproven.
+- The **Render blueprint** (task 20) was never synced — there is no deployment to sync it to. Every
+  field name and semantic was checked against Render's published blueprint spec instead of assumed.
+
+Known follow-ups, none of them blocking:
+
+- `frontend/src/features/research/pages/ResearchPage.tsx` and `lib/api/resources.ts` inline the
+  `VITE_API_BASE_URL` fallback instead of importing `API_BASE_URL` from `lib/api/client.ts`.
+- No `LICENSE` file, and `pyproject.toml` declares no `license` field, though the README says MIT.
+- `tsconfig*.json`, `.oxlintrc.json` and `components.json` are still swept up by the `*.json` line in
+  `.gitignore` and exist only on disk — only `package.json`/`package-lock.json` are un-ignored.
+- Frontend has no test suite at all; every UI task in this run was verified by hand in the browser.
+
 ## Task log
 
 - **Task 0 — environment bring-up: done.** Verified live: 13 tables, alembic at head `c961f1f9fde9`,
@@ -434,7 +489,17 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
 
 ## Blocked
 
-_(none yet)_
+**Nothing.** No task was blocked, abandoned or reverted — the "revert after 2 failed fix attempts"
+rule was never invoked, and every numbered task 0–20 is committed.
+
+One caveat that is *not* a block but is the weakest evidence in this run: the full DB-backed suite
+could not be re-run for **tasks 18–20**, because the preview channel (the only route to Postgres from
+this sandbox) was unavailable for the rest of the run. What did run for those three: `ruff check` and
+`ruff format --check` clean over 182 files, and **82 of 131 tests passed** — every test that needs no
+database, including all 5 added by tasks 18–19 — with the other 49 erroring on the sandbox's
+`PermissionError` when connecting to 127.0.0.1:5432, not on anything in the diff. The two runtime
+behaviour changes in that span were hand-verified instead (see the suite note under task 20). Confirm
+the full 131 with `docker compose up db redis -d` and `pytest -q --cov --cov-report=term`.
 
 ## Deferred — needs live API quota
 

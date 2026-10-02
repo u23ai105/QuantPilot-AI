@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 QuantPilot AI is an agentic financial research assistant: a Python/FastAPI **modular monolith** backend (deterministic financial tools, a LangGraph tool-calling agent, RAG over PDFs, async backtesting, a deterministic eval harness) plus a React/Vite frontend. Postgres+pgvector for storage, Redis+Celery for background work, Google Gemini for the LLM.
 
-Note: the README badge says "Phase 2" and is stale — the codebase has shipped through Phase 7 (product UI). Phase completion reports live in `docs/phase-reports/` and deep design docs in `docs/architecture/` (the AI code references `AI_ARCHITECTURE.md` section numbers in comments).
+Phase completion reports live in `docs/phase-reports/` and deep design docs in `docs/architecture/` (the AI code references `AI_ARCHITECTURE.md` section numbers in comments). The codebase has shipped through Phase 7 (product UI), which is what the README badge says.
 
 ## Commands
 
@@ -123,7 +123,7 @@ React 19 + TypeScript + Vite, TanStack Query for all server state, React Router 
 - Layout: `src/app/` (`providers.tsx` = QueryClient, `router.tsx` = routes), `src/features/<domain>/pages/` (auth, research, market, strategies, backtests, documents), `src/components/{ui,layout}`, `src/lib/api` (fetch client + per-domain API objects).
 - API client `src/lib/api/client.ts`: base URL from `VITE_API_BASE_URL` (default `http://127.0.0.1:8000/api/v1`), bearer token from `sessionStorage["access_token"]`, and on 401 it clears the token and dispatches a global `auth:unauthorized` event that `AuthContext` uses to force logout. Auth uses `sessionStorage` (not `localStorage`).
 - SSE chat: `research/pages/ResearchPage.tsx` consumes the streaming endpoint with `fetch` POST + `ReadableStream` reader (not `EventSource`, which can't POST), splitting on `\n\n` and handling `token`/`tool_start`/`tool_end` events.
-- Known cruft to ignore/avoid: `src/App.tsx` + `App.css` are leftover Vite template scaffolding (not routed); the sidebar links to `/settings`, which has no route; the `VITE_API_BASE_URL` fallback URL is duplicated in three files instead of importing `API_BASE_URL`.
+- Known cruft to avoid copying: the `VITE_API_BASE_URL` fallback URL is inlined in `features/research/pages/ResearchPage.tsx` and `lib/api/resources.ts` instead of importing `API_BASE_URL` from `lib/api/client.ts`, which is the one place that should define it.
 
 ## Conventions & gotchas
 
