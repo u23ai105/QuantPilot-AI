@@ -22,9 +22,5 @@ docs.zip
 .agents/
 uploads/
 
-# temp autonomous-run artifacts
-.pytest-out.txt
-scripts/_dbtask.py
 .venv/
 coverage.xml
-.pip-out.txt

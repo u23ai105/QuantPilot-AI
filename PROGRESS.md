@@ -10,9 +10,10 @@ cannot reach Postgres, so DB-backed tests only run there). Baseline at start of 
 broken Market Data page) — with this summary as the closing commit. Task 0 was environment bring-up and
 produced no code. Three tasks were grouped where the work was one change: `2-4`, `7,9,12`, `19,20`.
 
-The suite went from **63 passed to 131**, and the growth is the point: nearly every task added tests
-that would catch its own regression rather than just making the change. Coverage at the last full run
-was 68%.
+The suite went from **63 passed to 126 passed** on the last full DB-backed run (coverage **68%**), and
+the growth is the point: nearly every task added tests that would catch its own regression rather than
+just making the change. Tasks 18–19 added 5 more, so **131** is now collected — those 5 need no
+database and pass in the sandbox, but a full 131-test run has not been observed (see Blocked).
 
 What each task left behind, in one line each:
 
@@ -486,6 +487,13 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
     flags only add an event publish on the broker the task dispatch already uses.
   - To confirm the full 131, with `docker compose up db redis -d` running:
     `pytest -q --cov --cov-report=term`.
+- **End-of-run cleanup.** The scaffolding this run needed to work around the sandbox is gone: the six
+  `.*-out.txt` capture files and `scripts/_dbtask.py` deleted, the seven temporary `.claude/launch.json`
+  entries removed (`dbtask`, `migrate-cycle`, `pipinstall`, `npminstall`, `backend-nolimit`, `loadtest`,
+  `pytest`) leaving the three real ones — `frontend`, `backend`, `worker` — and the
+  `# temp autonomous-run artifacts` block dropped from `.gitignore`, keeping only the two entries that
+  outlive the run (`.venv/`, `coverage.xml`). `AGENTS.md` at the repo root is untracked and was left
+  alone: it is another tool's guidance file, not part of this run.
 
 ## Blocked
 
