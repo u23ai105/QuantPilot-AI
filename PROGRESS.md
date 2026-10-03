@@ -55,8 +55,11 @@ Known follow-ups, none of them blocking:
 - `frontend/src/features/research/pages/ResearchPage.tsx` and `lib/api/resources.ts` inline the
   `VITE_API_BASE_URL` fallback instead of importing `API_BASE_URL` from `lib/api/client.ts`.
 - No `LICENSE` file, and `pyproject.toml` declares no `license` field, though the README says MIT.
-- `tsconfig*.json`, `.oxlintrc.json` and `components.json` are still swept up by the `*.json` line in
-  `.gitignore` and exist only on disk — only `package.json`/`package-lock.json` are un-ignored.
+- ~~`tsconfig*.json`, `.oxlintrc.json` and `components.json` are still swept up by the `*.json` line in
+  `.gitignore` and exist only on disk.~~ **Fixed while merging `main` (2026-10-03):** the blanket
+  `*.json` ignore is gone and all five frontend configs are tracked, which a deploy needs — `tsc -b`
+  reads `tsconfig*.json` and Render builds from a clean clone, so the old rule would have broken the
+  frontend build.
 - Frontend has no test suite at all; every UI task in this run was verified by hand in the browser.
 
 ## Task log

@@ -11,16 +11,14 @@ htmlcov/
 dist/
 build/
 *.egg-info/
-*.json
-# Frontend dependency manifest + lockfile must be version-controlled despite the
-# blanket *.json ignore above (parent dir isn't excluded, so these negations apply).
-!frontend/package.json
-!frontend/package-lock.json
 docs.zip
 .ruff_cache/
 
 .agents/
 uploads/
+*_resp.json
 
 .venv/
 coverage.xml
+# Local preview/launch config: machine-specific interpreter paths and ports.
+.claude/launch.json
