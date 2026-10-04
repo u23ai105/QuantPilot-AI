@@ -75,7 +75,7 @@ Redis. Implementation has shipped through **Phase 7 (product UI)** — see
 | **Backend API** | FastAPI, Python 3.11, SQLAlchemy 2 (async), Pydantic v2 |
 | **Data** | PostgreSQL 16 + pgvector (HNSW), Alembic |
 | **Background Tasks** | Celery, Redis |
-| **AI / Machine Learning** | LangGraph, `gemini-2.0-flash`, `models/gemini-embedding-001` |
+| **AI / Machine Learning** | LangGraph, `gemini-3.6-flash`, `models/gemini-embedding-001` |
 | **Quantitative** | backtesting.py, yfinance, pandas |
 | **Frontend** | React 19, TypeScript, Vite, TanStack Query, Tailwind |
 | **DevOps & Infra** | Docker Compose, Render, GitHub Actions, structlog, Ruff, Pytest |

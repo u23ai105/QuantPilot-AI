@@ -97,7 +97,7 @@ Suite after tasks 2–4: **69 passed** (63 baseline + 6 new).
   "Phase 2 (Market Data & Indicators)" though `docs/phase-reports/` goes through Phase 7; the whole
   feature list was headed "Core Features (**Planned**)" while describing shipped code; and both model
   IDs were wrong — "Gemini 3.6 Flash" and "gemini-embedding-2" don't exist in the codebase, which uses
-  `gemini-2.0-flash` (`app/core/config.py:20`) and `models/gemini-embedding-001`
+  `gemini-3.6-flash` (`app/core/config.py:20`) and `models/gemini-embedding-001`
   (`app/ai/embedding.py:17`). Also added an API-surface table generated from the actual `@router`
   decorators, the frontend setup and Celery queue commands, the non-hermetic-tests warning, and a
   deployment section from `render.yaml`. Removed the MIT badge and softened the license section: there
