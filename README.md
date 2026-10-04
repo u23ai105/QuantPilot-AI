@@ -2,6 +2,7 @@
   <h1>🚀 QuantPilot AI</h1>
   <p><strong>Agentic Financial Research Assistant</strong></p>
 
+  [![CI](https://github.com/u23ai105/QuantPilot-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/u23ai105/QuantPilot-AI/actions/workflows/ci.yml)
   [![Status: Phase 7 (Product UI)](https://img.shields.io/badge/Status-Phase%207-blue.svg)](docs/phase-reports/)
   [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
   [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green.svg)](https://fastapi.tiangolo.com/)
@@ -109,8 +110,8 @@ Interactive docs at `http://localhost:8000/docs`.
 ### 1. Environment Setup
 
 ```bash
-git clone https://github.com/yourusername/quantpilot-ai.git
-cd quantpilot-ai
+git clone https://github.com/u23ai105/QuantPilot-AI.git
+cd QuantPilot-AI
 
 python3 -m venv venv
 source venv/bin/activate
@@ -123,7 +124,8 @@ Set `GEMINI_API_KEY` in `.env`. The API boots without it — only the chat endpo
 
 ### 2. Running the Infrastructure
 
-Everything (API + worker + Postgres/pgvector + Redis):
+All five services in `docker-compose.yml` — API, worker, Postgres/pgvector, Redis, and Flower (the
+dev-only Celery dashboard, see step 8):
 
 ```bash
 docker compose up --build -d
@@ -198,6 +200,15 @@ authentication, its API can revoke and terminate tasks, and task arguments are s
 The test suite is **not hermetic** — `tests/conftest.py` connects to a real Postgres with pgvector and
 drops/recreates all tables per test, so `docker compose up db redis -d` must be running first.
 
+It also uses a **separate database named `quantpilot_test`** (derived from `DATABASE_URL` by
+suffixing the database name, or set explicitly via `TEST_DATABASE_URL`) so the suite never drops your
+development schema. Create it once, with the `vector` extension, before running `pytest`:
+
+```bash
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE quantpilot_test;"'
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d quantpilot_test -c "CREATE EXTENSION IF NOT EXISTS vector;"'
+```
+
 ```bash
 ruff check .
 ruff format --check .
@@ -232,5 +243,4 @@ The database is pinned to Postgres 16 to match the local `pgvector/pgvector:pg16
 
 ## 📝 License
 
-Intended to be MIT-licensed, but note that no `LICENSE` file is committed yet and `pyproject.toml`
-declares no `license` field — add both before publishing.
+MIT — see [`LICENSE`](LICENSE).

@@ -17,6 +17,7 @@ docs.zip
 .agents/
 uploads/
 *_resp.json
+scratch/
 
 .venv/
 coverage.xml
