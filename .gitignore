@@ -22,3 +22,5 @@ uploads/
 coverage.xml
 # Local preview/launch config: machine-specific interpreter paths and ports.
 .claude/launch.json
+
+.claude/settings.local.json
