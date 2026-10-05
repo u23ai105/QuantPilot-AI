@@ -82,6 +82,15 @@ Redis. Implementation has shipped through **Phase 7 (product UI)** — see
 
 ---
 
+## 🤖 LLM Providers
+
+- **Gemini (default):** `gemini-3.6-flash` is the default model.
+- **NVIDIA NIM (optional):** Selected with `LLM_PROVIDER=nim`, `LLM_MODEL`, and `NVIDIA_API_KEY`.
+- **Embeddings:** Stay on Gemini (`models/gemini-embedding-001`).
+- **Verified NIM model:** `nvidia/nemotron-3-ultra-550b-a55b`. See [`app/ai/model_registry.py`](app/ai/model_registry.py) for unverified candidates.
+
+---
+
 ## 🗺️ API surface
 
 All routes are mounted under `/api/v1` and, apart from `auth`, require a bearer token.
@@ -238,6 +247,29 @@ static frontend build. Postgres and Redis are provisioned by the blueprint, so `
 
 The database is pinned to Postgres 16 to match the local `pgvector/pgvector:pg16` image, and the
 `vector` extension is created by the first migration rather than by hand.
+
+---
+
+## 📚 Documentation
+
+- [`docs/PROGRAM.md`](docs/PROGRAM.md) — Technical Program Management overview: scope, team ownership, milestones, RAID log, key architectural trade-offs, and quality gates.
+- [`docs/architecture/`](docs/architecture/) — High-Level Design (HLD), Low-Level Design (LLD), component architecture, and ADRs.
+- [`docs/phase-reports/`](docs/phase-reports/) — Implementation completion reports across delivery milestones.
+
+---
+
+## 👥 Team
+
+Built by Muzammil and Rajkumar.
+
+| Area | Owner |
+| :--- | :--- |
+| API / Auth | Muzammil, Rajkumar |
+| Database and migrations | Muzammil, Rajkumar |
+| Backtesting | Muzammil, Rajkumar |
+| RAG / Agent | Muzammil, Rajkumar |
+| CI / Testing | Muzammil, Rajkumar |
+| Docs | Muzammil, Rajkumar |
 
 ---
 
