@@ -14,9 +14,9 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.model_registry import LLMConfigurationError
 from app.ai.service import AgentService
 from app.api.deps import get_current_user, get_db_session
-from app.core.config import settings
 from app.core.exceptions import DataProviderError
 from app.models.user import User
 from app.schemas.conversations import (
@@ -48,18 +48,13 @@ _agent_service: AgentService | None = None
 
 
 def _get_agent_service() -> AgentService:
-    """Lazily construct the singleton agent service.
-
-    Guarded so a missing GEMINI_API_KEY surfaces as a clean 502 from the chat
-    path (instead of an opaque 500 when the Gemini client construction raises),
-    and a broken instance is never cached.  The rest of the API stays up
-    without a key — only this endpoint needs Gemini.
-    """
+    """Lazily construct the singleton, reporting invalid provider settings as a 502."""
     global _agent_service
     if _agent_service is None:
-        if not settings.gemini_api_key:
-            raise DataProviderError("AI agent unavailable: GEMINI_API_KEY is not configured")
-        _agent_service = AgentService()
+        try:
+            _agent_service = AgentService()
+        except LLMConfigurationError as exc:
+            raise DataProviderError(f"AI agent unavailable: {exc}") from exc
     return _agent_service
 
 
@@ -98,7 +93,7 @@ async def create_conversation(
     "- `error` — `{message}`, a generic message; the specific cause is logged server-side, not returned\n"
     "- `done` — always last, closing the turn\n\n"
     "Both the user message and the finished reply are persisted, so the next turn sees them. Rate limited to 20 "
-    "requests per minute per caller, this being the endpoint that spends Gemini quota. Disconnecting cancels the "
+    "requests per minute per caller, this being the endpoint that spends chat-model quota. Disconnecting cancels the "
     "turn server-side.",
     responses={
         200: {"description": "SSE stream of `tool_start` / `tool_end` / `token` / `error` / `done` events", "content": {"text/event-stream": {}}},
@@ -106,7 +101,7 @@ async def create_conversation(
         404: {"description": "No such conversation"},
         422: {"description": "`content` is empty or longer than 10000 characters"},
         429: {"description": "Rate limit exceeded — see `Retry-After`"},
-        502: {"description": "`GEMINI_API_KEY` is not configured, so the agent cannot be constructed"},
+        502: {"description": "The selected provider/model is invalid or its GEMINI_API_KEY/NVIDIA_API_KEY is not configured"},
     },
 )
 async def send_message(

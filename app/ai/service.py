@@ -14,8 +14,8 @@ import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.ai.graph import build_graph
+from app.ai.llm_factory import create_chat_model
 from app.ai.prompts import SYSTEM_PROMPT
-from app.ai.provider import GeminiLLMAdapter
 from app.ai.tools._context import set_current_user_id
 from app.ai.tools.backtest import run_backtest
 from app.ai.tools.documents import search_documents
@@ -52,7 +52,7 @@ class AgentService:
     """Entry point for AI agent interactions.
 
     Responsibilities:
-    - Construct the Gemini model with bound tools
+    - Construct the selected chat model with bound tools
     - Create the LangGraph graph
     - Invoke graph execution with streaming
     - Inject authenticated user context into tool execution
@@ -68,9 +68,9 @@ class AgentService:
     """
 
     def __init__(self):
-        self._provider = GeminiLLMAdapter()
+        self._model = create_chat_model()
         self._tools = ALL_TOOLS
-        self._model_with_tools = self._provider.bind_tools(self._tools)
+        self._model_with_tools = self._model.bind_tools(self._tools)
         self._graph = build_graph(self._model_with_tools, self._tools)
         self._compiled = self._graph.compile()
 
@@ -176,7 +176,12 @@ class AgentService:
                 # LLM token streaming
                 elif kind == "on_chat_model_stream":
                     chunk = event.get("data", {}).get("chunk")
-                    if chunk is not None and getattr(chunk, "content", None) and not getattr(chunk, "tool_calls", None):
+                    if (
+                        chunk is not None
+                        and getattr(chunk, "content", None)
+                        and not getattr(chunk, "tool_calls", None)
+                        and not getattr(chunk, "tool_call_chunks", None)
+                    ):
                         text = _extract_text(chunk.content)
                         if text:
                             full_response += text
@@ -186,7 +191,8 @@ class AgentService:
             logger.error(
                 "agent_invoke_error",
                 conversation_id=str(conversation_id),
-                error=str(exc),
+                error_type=type(exc).__name__,
+                status_code=getattr(exc, "status_code", None),
             )
             yield StreamEvent("error", {"message": "An error occurred processing your request."})
             return
@@ -220,7 +226,7 @@ def _extract_text(content: str | list | None) -> str:
     for block in content:
         if isinstance(block, str):
             parts.append(block)
-        elif isinstance(block, dict) and block.get("type", "text") == "text":
+        elif isinstance(block, dict) and block.get("type", "text") == "text" and not block.get("thought"):
             text = block.get("text")
             if isinstance(text, str):
                 parts.append(text)

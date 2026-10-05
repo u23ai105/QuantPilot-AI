@@ -10,10 +10,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.ai.llm_factory import create_chat_model
+from app.ai.model_registry import resolve_model
+
 # Import the context var from ai.tools.documents where it is defined,
 # or define it locally and mock it out if needed.
 # Since we need to pass user_id to the tools, let's look at how test_rag.py does it.
 from app.ai.tools.documents import _current_user_id
+from app.core.config import settings
 from app.core.db import async_session_maker
 from app.models.eval import EvalQuestion, EvalRun
 from app.models.user import User
@@ -21,7 +25,17 @@ from app.services.eval_service import EvalService
 from app.services.retrieval_service import RetrievalService
 
 
-async def run_evaluation(only_unscored: bool = False, question_ids: list[int] | None = None):
+async def run_evaluation(
+    only_unscored: bool = False,
+    question_ids: list[int] | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+):
+    selected_provider = provider or settings.llm_provider
+    selected_model = resolve_model(selected_provider, model or settings.llm_model)
+    chat_model = create_chat_model(provider=selected_provider, model=selected_model)
+    print(f"Chat provider: {selected_provider}; model: {selected_model}")
+
     async with async_session_maker() as session:
         # Get the dummy eval user created by the seed script
         stmt = select(User).filter_by(email="eval_user@example.com")
@@ -65,13 +79,9 @@ async def run_evaluation(only_unscored: bool = False, question_ids: list[int] | 
         from langgraph.checkpoint.memory import MemorySaver
 
         from app.ai.graph import build_graph
-        from app.ai.provider import GeminiLLMAdapter
         from app.ai.service import ALL_TOOLS
 
-        # GeminiLLMAdapter reads settings.gemini_model, so eval runs on the same
-        # model the app ships (env-overridable). Rate limits are handled by the
-        # fixed inter-question pacing and the 429 backoff loop below.
-        model_with_tools = GeminiLLMAdapter().bind_tools(ALL_TOOLS)
+        model_with_tools = chat_model.bind_tools(ALL_TOOLS)
         graph = build_graph(model_with_tools, ALL_TOOLS)
         compiled_graph = graph.compile(checkpointer=MemorySaver())
 
@@ -273,7 +283,18 @@ if __name__ == "__main__":
         "--questions",
         help="Comma-separated EvalQuestion IDs to run, e.g. --questions 10,11,12.",
     )
+    parser.add_argument(
+        "--provider",
+        choices=["gemini", "nim"],
+        default=None,
+        help="LLM provider to use for this eval run (gemini|nim). Defaults to LLM_PROVIDER in settings.",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Exact model ID to use (must be on the provider allowlist). Defaults to registry default for the provider.",
+    )
     _args = parser.parse_args()
     _ids = [int(x) for x in _args.questions.split(",") if x.strip()] if _args.questions else None
 
-    asyncio.run(run_evaluation(only_unscored=_args.only_unscored, question_ids=_ids))
+    asyncio.run(run_evaluation(only_unscored=_args.only_unscored, question_ids=_ids, provider=_args.provider, model=_args.model))

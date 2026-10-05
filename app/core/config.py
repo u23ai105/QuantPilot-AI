@@ -1,4 +1,6 @@
-from pydantic import field_validator
+from typing import Literal
+
+from pydantic import SecretStr, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +31,18 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.6-flash"
     gemini_temperature: float = 0.0
     gemini_max_output_tokens: int = 4096
+
+    llm_provider: Literal["gemini", "nim"] = "gemini"
+    llm_model: str | None = None
+    nvidia_api_key: SecretStr = SecretStr("")
+    nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
+
+    @field_validator("llm_provider", "llm_model", "nvidia_base_url", mode="before")
+    @classmethod
+    def default_empty_llm_settings(cls, value, info: ValidationInfo):
+        if isinstance(value, str) and not value.strip():
+            return cls.model_fields[info.field_name].default
+        return value
 
     @field_validator("database_url", mode="before")
     @classmethod
