@@ -1,3 +1,5 @@
+import os
+import threading
 import uuid
 from contextlib import asynccontextmanager
 
@@ -39,7 +41,33 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        # In production on Render (combined web service within 512MB RAM) or when RUN_WORKER=true,
+        # run the Celery background worker in an embedded daemon thread. This shares the Python memory space
+        # with FastAPI, dropping total memory from ~480MB down to ~210MB, safely staying within Render's
+        # 512MB free tier limit without OOM crashes.
+        worker = None
+        if os.getenv("RUN_WORKER", "false").lower() in ("true", "1") or settings.app_env == "production":
+            try:
+                from app.workers.celery_app import celery_app
+
+                worker = celery_app.Worker(
+                    queues=["celery", "backtest", "embedding"],
+                    pool="solo",
+                    loglevel=settings.log_level.upper(),
+                )
+                worker_thread = threading.Thread(target=worker.start, daemon=True, name="celery-worker")
+                worker_thread.start()
+                logger.info("Embedded Celery worker started in background thread (pool=solo)")
+            except Exception as e:
+                logger.error("Failed to start embedded Celery worker: %s", e)
+
         yield
+
+        if worker is not None:
+            try:
+                worker.stop()
+            except Exception:
+                pass
         if limiter is not None:
             await limiter.close()
         # The query-embedding cache holds a lazily created connection pool; nothing to close if no
