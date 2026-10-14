@@ -17,7 +17,7 @@ from app.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-async def process_document_async(document_id: int) -> None:
+async def process_document_async(document_id: int, provider: str | None = None, model: str | None = None) -> None:
     """Async business logic for embedding a document."""
     # Create task-local engine
     engine = create_async_engine(
@@ -57,7 +57,7 @@ async def process_document_async(document_id: int) -> None:
 
                 # 3. Embedding (supports local FastEmbed or Gemini Embedding 2)
                 texts_to_embed = [c["chunk_text"] for c in chunks_data]
-                adapter = get_embedding_adapter()
+                adapter = get_embedding_adapter(provider=provider, model=model)
                 logger.info("Starting embedding of %d chunks using %s...", len(texts_to_embed), adapter.__class__.__name__)
                 vectors = await adapter.embed_documents(texts_to_embed)
                 logger.info("Finished embedding, received %d vectors", len(vectors))
@@ -111,10 +111,10 @@ async def process_document_async(document_id: int) -> None:
 
 
 @celery_app.task(bind=True, max_retries=3)
-def embed_document(self, document_id: int):
+def embed_document(self, document_id: int, provider: str | None = None, model: str | None = None):
     """Celery task to embed a document with retries."""
     try:
-        asyncio.run(process_document_async(document_id))
+        asyncio.run(process_document_async(document_id, provider=provider, model=model))
     except Exception as exc:
         logger.warning(f"Error processing document {document_id}: {exc}")
         exc_msg = str(exc)

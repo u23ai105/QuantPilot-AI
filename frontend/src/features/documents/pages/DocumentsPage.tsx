@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageContainer } from "@/components/layout/AppShell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,8 +27,38 @@ export function DocumentsPage() {
     refetchInterval: 5000, // poll so PROCESSING → PROCESSED updates automatically
   });
 
+  const { data: modelsData } = useQuery({
+    queryKey: ["models"],
+    queryFn: async () => {
+      const url = `${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1"}/models`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to load models");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const [selectedEmbedding, setSelectedEmbedding] = useState<{ provider: string; model: string }>(() => {
+    const saved = sessionStorage.getItem("quantpilot_selected_embedding");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return { provider: "gemini", model: "models/gemini-embedding-001" };
+  });
+
+  useEffect(() => {
+    if (modelsData && !sessionStorage.getItem("quantpilot_selected_embedding")) {
+      const defaultEmb = modelsData.embedding_models?.find((m: any) => m.is_default) || modelsData.embedding_models?.[0];
+      if (defaultEmb) {
+        setSelectedEmbedding({ provider: defaultEmb.provider, model: defaultEmb.model });
+      }
+    }
+  }, [modelsData]);
+
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => documentsApi.upload(file),
+    mutationFn: (file: File) => documentsApi.upload(file, selectedEmbedding.provider, selectedEmbedding.model),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["documents"] }),
   });
 
@@ -55,8 +85,8 @@ export function DocumentsPage() {
 
   return (
     <PageContainer title="Documents & RAG" description="Upload 10-K / annual-report PDFs for AI context retrieval.">
-      {/* Search + Upload Row */}
-      <div className="flex gap-4 mb-6">
+      {/* Search + Model Select + Upload Row */}
+      <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -67,9 +97,38 @@ export function DocumentsPage() {
             className="pl-9 bg-background/50"
           />
         </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Embed with:</span>
+          <select
+            value={`${selectedEmbedding.provider}:${selectedEmbedding.model}`}
+            onChange={(e) => {
+              const [prov, ...rest] = e.target.value.split(":");
+              const val = { provider: prov, model: rest.join(":") };
+              setSelectedEmbedding(val);
+              sessionStorage.setItem("quantpilot_selected_embedding", JSON.stringify(val));
+            }}
+            disabled={uploadMutation.isPending}
+            className="bg-background/80 border border-border/60 text-foreground text-xs rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-ai font-medium cursor-pointer"
+          >
+            {modelsData?.embedding_models ? (
+              modelsData.embedding_models.map((m: any) => (
+                <option key={`${m.provider}:${m.model}`} value={`${m.provider}:${m.model}`}>
+                  {m.display_name}
+                </option>
+              ))
+            ) : (
+              <>
+                <option value="gemini:models/gemini-embedding-001">Google Gemini Embedding 2</option>
+                <option value="local:BAAI/bge-base-en-v1.5">Local FastEmbed (BGE-base-en-v1.5)</option>
+              </>
+            )}
+          </select>
+        </div>
+
         <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
         <Button
-          className="bg-foreground text-background hover:bg-foreground/90"
+          className="bg-foreground text-background hover:bg-foreground/90 whitespace-nowrap"
           disabled={uploadMutation.isPending}
           onClick={() => fileInputRef.current?.click()}
         >

@@ -130,6 +130,8 @@ async def send_message(
             user_id=user.id,
             content=data.content,
             conversation_service=conv_service,
+            embedding_provider=data.embedding_provider,
+            embedding_model=data.embedding_model,
         ):
             yield event.to_sse()
 

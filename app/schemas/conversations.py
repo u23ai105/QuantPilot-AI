@@ -24,6 +24,8 @@ class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=10000)
     provider: str | None = Field(default=None, description="LLM provider: 'gemini' or 'nim'")
     model: str | None = Field(default=None, description="Model ID override (e.g. 'gemini-3.6-flash' or 'nvidia/nemotron-3-ultra-550b-a55b')")
+    embedding_provider: str | None = Field(default=None, description="Embedding provider: 'gemini', 'local', etc.")
+    embedding_model: str | None = Field(default=None, description="Embedding model override")
 
 
 class MessageResponse(BaseModel):

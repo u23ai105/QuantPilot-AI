@@ -16,7 +16,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from app.ai.graph import build_graph
 from app.ai.llm_factory import create_chat_model
 from app.ai.prompts import SYSTEM_PROMPT
-from app.ai.tools._context import set_current_user_id
+from app.ai.tools._context import set_current_embedding_config, set_current_user_id
 from app.ai.tools.backtest import run_backtest
 from app.ai.tools.documents import search_documents
 from app.ai.tools.indicators import calculate_indicators
@@ -82,6 +82,8 @@ class AgentService:
         user_id: uuid.UUID,
         content: str,
         conversation_service: ConversationService,
+        embedding_provider: str | None = None,
+        embedding_model: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Process a user message through the LangGraph agent.
 
@@ -104,8 +106,9 @@ class AgentService:
             elif msg.role == "ASSISTANT":
                 langchain_messages.append(AIMessage(content=msg.content))
 
-        # 3. Set authenticated user context for tool authorization
+        # 3. Set authenticated user and embedding context for tool authorization
         set_current_user_id(user_id)
+        set_current_embedding_config(embedding_provider, embedding_model)
 
         # 4. Invoke LangGraph with streaming. No thread_id: without a checkpointer there is no
         # thread to resume, so the ids serve only to correlate this run in traces/logs.

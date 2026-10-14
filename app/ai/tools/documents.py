@@ -5,7 +5,11 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-from app.ai.tools._context import _current_user_id, get_db_session_for_tool
+from app.ai.tools._context import (
+    _current_user_id,
+    get_current_embedding_config,
+    get_db_session_for_tool,
+)
 from app.ai.tools.schemas import SearchDocumentsInput
 from app.services.retrieval_service import RetrievalService
 
@@ -31,7 +35,8 @@ async def search_documents(
     if not session:
         return {"error": "Database session not available."}
 
-    service = RetrievalService(session)
+    emb_provider, emb_model = get_current_embedding_config()
+    service = RetrievalService(session, embedding_provider=emb_provider, embedding_model=emb_model)
 
     try:
         results = await service.search(

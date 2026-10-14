@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
-import { Send, Bot, User, Wrench, AlertCircle, Loader2, Cpu } from "lucide-react";
+import { Send, Bot, User, Wrench, AlertCircle, Loader2, Cpu, Sparkles } from "lucide-react";
 import { conversationsApi } from "@/lib/api/resources";
 
 interface ClientMessage {
@@ -56,11 +56,27 @@ export function ResearchPage() {
     return { provider: "gemini", model: "gemini-3.6-flash" };
   });
 
+  const [selectedEmbedding, setSelectedEmbedding] = useState<{ provider: string; model: string }>(() => {
+    const saved = sessionStorage.getItem("quantpilot_selected_embedding");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return { provider: "gemini", model: "models/gemini-embedding-001" };
+  });
+
   useEffect(() => {
     if (modelsData && !sessionStorage.getItem("quantpilot_selected_model")) {
       const defaultChat = modelsData.chat_models?.find((m: any) => m.is_default) || modelsData.chat_models?.[0];
       if (defaultChat) {
         setSelectedModel({ provider: defaultChat.provider, model: defaultChat.model });
+      }
+    }
+    if (modelsData && !sessionStorage.getItem("quantpilot_selected_embedding")) {
+      const defaultEmb = modelsData.embedding_models?.find((m: any) => m.is_default) || modelsData.embedding_models?.[0];
+      if (defaultEmb) {
+        setSelectedEmbedding({ provider: defaultEmb.provider, model: defaultEmb.model });
       }
     }
   }, [modelsData]);
@@ -69,6 +85,12 @@ export function ResearchPage() {
     const val = { provider: prov, model: mod };
     setSelectedModel(val);
     sessionStorage.setItem("quantpilot_selected_model", JSON.stringify(val));
+  };
+
+  const handleEmbeddingChange = (prov: string, mod: string) => {
+    const val = { provider: prov, model: mod };
+    setSelectedEmbedding(val);
+    sessionStorage.setItem("quantpilot_selected_embedding", JSON.stringify(val));
   };
 
   // Fetch historical messages if we have a conversation ID
@@ -175,7 +197,9 @@ export function ResearchPage() {
         body: JSON.stringify({ 
           content: userMsgContent,
           provider: selectedModel.provider,
-          model: selectedModel.model
+          model: selectedModel.model,
+          embedding_provider: selectedEmbedding.provider,
+          embedding_model: selectedEmbedding.model,
         }),
         signal: abortControllerRef.current.signal
       });
@@ -281,13 +305,32 @@ export function ResearchPage() {
               </select>
             </div>
 
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground text-[11px]">Embedding:</span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary/80 text-foreground border border-border/40 font-mono">
-                {modelsData?.current_embedding_provider === "local"
-                  ? "Local FastEmbed (BGE 768d)"
-                  : "Gemini Embedding 2"}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-ai" /> Embedding:
               </span>
+              <select
+                value={`${selectedEmbedding.provider}:${selectedEmbedding.model}`}
+                onChange={(e) => {
+                  const [prov, ...rest] = e.target.value.split(":");
+                  handleEmbeddingChange(prov, rest.join(":"));
+                }}
+                disabled={activeStream?.isStreaming}
+                className="bg-background border border-border/60 text-foreground text-xs rounded-md px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-ai font-medium cursor-pointer disabled:opacity-50"
+              >
+                {modelsData?.embedding_models ? (
+                  modelsData.embedding_models.map((m: any) => (
+                    <option key={`${m.provider}:${m.model}`} value={`${m.provider}:${m.model}`}>
+                      {m.display_name}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="gemini:models/gemini-embedding-001">Google Gemini Embedding 2</option>
+                    <option value="local:BAAI/bge-base-en-v1.5">Local FastEmbed (BGE-base-en-v1.5)</option>
+                  </>
+                )}
+              </select>
             </div>
           </div>
 

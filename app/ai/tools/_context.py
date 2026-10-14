@@ -16,11 +16,19 @@ from app.core.db import async_session_maker
 
 # Context variable holding the authenticated user ID during tool execution.
 _current_user_id: ContextVar[UUID | None] = ContextVar("current_user_id", default=None)
+_current_embedding_provider: ContextVar[str | None] = ContextVar("current_embedding_provider", default=None)
+_current_embedding_model: ContextVar[str | None] = ContextVar("current_embedding_model", default=None)
 
 
 def set_current_user_id(user_id: UUID) -> None:
     """Set the authenticated user ID for the current tool execution context."""
     _current_user_id.set(user_id)
+
+
+def set_current_embedding_config(provider: str | None, model: str | None) -> None:
+    """Set the active embedding provider and model for document search tools."""
+    _current_embedding_provider.set(provider)
+    _current_embedding_model.set(model)
 
 
 def get_current_user_id() -> UUID:
@@ -29,6 +37,11 @@ def get_current_user_id() -> UUID:
     if uid is None:
         raise RuntimeError("No authenticated user in tool context")
     return uid
+
+
+def get_current_embedding_config() -> tuple[str | None, str | None]:
+    """Get the active embedding provider and model."""
+    return _current_embedding_provider.get(), _current_embedding_model.get()
 
 
 async def get_db_session_for_tool() -> AsyncSession:

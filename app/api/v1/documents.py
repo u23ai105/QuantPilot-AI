@@ -1,6 +1,6 @@
 from typing import Sequence
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db_session
@@ -32,14 +32,16 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 )
 async def upload_document(
     file: UploadFile = File(...),
+    embedding_provider: str | None = Form(None),
+    embedding_model: str | None = Form(None),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ) -> DocumentResponse:
     service = DocumentService(session)
     doc = await service.ingest_document(current_user.id, file)
 
-    # Dispatch Celery task
-    embed_document.delay(doc.id)
+    # Dispatch Celery task with selected embedding model
+    embed_document.delay(doc.id, provider=embedding_provider, model=embedding_model)
 
     return doc
 

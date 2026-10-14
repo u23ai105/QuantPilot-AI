@@ -106,16 +106,24 @@ export const backtestsApi = {
 
 export const documentsApi = {
   list: () => fetchClient<DocumentResponse[]>("/documents"),
-  upload: (file: File) => {
+  upload: (file: File, embeddingProvider?: string, embeddingModel?: string) => {
     const form = new FormData();
     form.append("file", file);
+    if (embeddingProvider) form.append("embedding_provider", embeddingProvider);
+    if (embeddingModel) form.append("embedding_model", embeddingModel);
     // fetchClient sets Content-Type: application/json by default, so bypass it for multipart
     const token = sessionStorage.getItem("access_token");
     return fetch(`${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1"}/documents`, {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: form,
-    }).then(r => r.json()) as Promise<DocumentResponse>;
+    }).then(async r => {
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.detail || "Upload failed");
+      }
+      return r.json();
+    }) as Promise<DocumentResponse>;
   },
   delete: (id: number) =>
     fetchClient<void>(`/documents/${id}`, { method: "DELETE" }),
