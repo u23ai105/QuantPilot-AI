@@ -1,112 +1,49 @@
 services:
-  # 1. FastAPI Backend Service
+  # 1. FastAPI Backend + Celery Background Worker (Combined 100% Free Web Service)
+  # Runs Alembic migrations, Celery worker in background, and FastAPI Uvicorn server in foreground.
+  # This avoids Render's paid Background Worker tier ($7/mo) and ensures PDF uploads share the same filesystem.
   - type: web
     name: quantpilot-api
     env: python
+    plan: free
     buildCommand: pip install .
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    releaseCommand: alembic upgrade head
+    startCommand: bash scripts/start_production.sh
     envVars:
       - key: APP_ENV
         value: production
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: DATABASE_URL
-        fromDatabase:
-          name: quantpilot-db
-          property: connectionString
+        sync: false
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: quantpilot-redis
-          property: connectionString
-      - key: CELERY_BROKER_URL
-        fromService:
-          type: redis
-          name: quantpilot-redis
-          property: connectionString
-      - key: CELERY_RESULT_BACKEND
-        fromService:
-          type: redis
-          name: quantpilot-redis
-          property: connectionString
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGINS
         sync: false
-      # A Render web service is reachable from the public internet, so /metrics must not be open here:
-      # it would expose route names and traffic volumes to anyone. Generated rather than left blank —
-      # read the value from the Render dashboard and give it to the scraper.
       - key: METRICS_TOKEN
         generateValue: true
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
         value: gemini-3.6-flash
-
-  # 2. Celery Background Worker
-  - type: worker
-    name: quantpilot-worker
-    env: python
-    buildCommand: pip install .
-    startCommand: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2 --queues=celery,backtest,embedding
-    envVars:
-      - key: APP_ENV
-        value: production
-      - key: DATABASE_URL
-        fromDatabase:
-          name: quantpilot-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: quantpilot-redis
-          property: connectionString
-      - key: CELERY_BROKER_URL
-        fromService:
-          type: redis
-          name: quantpilot-redis
-          property: connectionString
-      - key: CELERY_RESULT_BACKEND
-        fromService:
-          type: redis
-          name: quantpilot-redis
-          property: connectionString
-      - key: GEMINI_API_KEY
+      - key: EMBEDDING_PROVIDER
+        value: local
+      - key: NVIDIA_API_KEY
         sync: false
 
-  # 3. Redis Instance
-  - type: redis
-    name: quantpilot-redis
-    ipAllowList: [] # only allow internal services
-
-  # 4. React Frontend Static Site
+  # 2. React Frontend Static Site (100% Free Forever)
   - type: web
     name: quantpilot-frontend
     env: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
         sync: false
 
-# 5. Managed Postgres
-#
-# Declared here rather than left as a `sync: false` secret so a blueprint sync provisions the database
-# and wires `DATABASE_URL` into both the API and the worker itself. `fromDatabase`/`connectionString`
-# yields `postgresql://user:password@host:port/database` over Render's private network; the validator
-# on `settings.database_url` rewrites that scheme to `postgresql+asyncpg://`, which is why the URL can
-# be consumed verbatim.
-#
-# pgvector needs no manual step: the first migration runs `CREATE EXTENSION IF NOT EXISTS vector`, and
-# the release command (`alembic upgrade head`) runs it as the owner created below. The major version is
-# pinned to match the `pgvector/pgvector:pg16` image used locally, so dev and production agree; both
-# `postgresMajorVersion` and `databaseName`/`user` are immutable once the instance exists.
-databases:
-  - name: quantpilot-db
-    databaseName: quantpilot
-    user: quantpilot
-    plan: free
-    postgresMajorVersion: "16"
-    # Empty list = no external connections at all; only services in this blueprint can reach it.
-    # Omitting the key would instead allow any IP that has the credentials.
-    ipAllowList: []

@@ -26,6 +26,7 @@ class DocumentRepository:
         return result.scalars().all()
 
     async def update(self, document: Document) -> Document:
+        self.session.add(document)
         await self.session.commit()
         await self.session.refresh(document)
         return document
@@ -40,10 +41,11 @@ class DocumentRepository:
         await self.session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == document_id))
         await self.session.commit()
 
-    async def bulk_insert_chunks(self, chunks: list[DocumentChunk]) -> None:
+    async def bulk_insert_chunks(self, chunks: list[DocumentChunk], batch_size: int = 40) -> None:
         if chunks:
-            self.session.add_all(chunks)
-            await self.session.commit()
+            for i in range(0, len(chunks), batch_size):
+                self.session.add_all(chunks[i : i + batch_size])
+                await self.session.commit()
 
     async def search_user_chunks(
         self, user_id: UUID, query_embedding: list[float], limit: int = 5, document_id: int | None = None

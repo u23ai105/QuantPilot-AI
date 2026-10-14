@@ -33,6 +33,7 @@ dependencies = [
     "openai>=1.109.1,<3.0",
     "python-multipart>=0.0.9",
     "pymupdf>=1.23.0",
+    "fastembed>=0.4.0",
     "pgvector>=0.2.5",
     # SQLAlchemy only requires greenlet for some platforms/extras, but every async DB call
     # here goes through it — declare it directly so no platform resolves without it.

@@ -62,7 +62,9 @@ class CachedQueryEmbedder:
         self._ttl_seconds = ttl_seconds
 
     async def embed_query(self, text: str) -> list[float]:
-        key = query_cache_key(text)
+        model_name = getattr(self._embedder, "model_name", EMBEDDING_MODEL)
+        dimensions = getattr(self._embedder, "dimensions", EMBEDDING_DIMENSIONS)
+        key = query_cache_key(text, model=model_name, dimensions=dimensions)
 
         cached = await self._cache.get(key)
         if _is_usable_vector(cached):

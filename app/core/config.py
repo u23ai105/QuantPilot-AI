@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import SecretStr, ValidationInfo, field_validator
+from pydantic import SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     app_name: str = "QuantPilot AI"
     database_url: str
     redis_url: str
-    celery_broker_url: str
-    celery_result_backend: str
+    celery_broker_url: str = ""
+    celery_result_backend: str = ""
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60
@@ -37,7 +37,11 @@ class Settings(BaseSettings):
     nvidia_api_key: SecretStr = SecretStr("")
     nvidia_base_url: str = "https://integrate.api.nvidia.com/v1"
 
-    @field_validator("llm_provider", "llm_model", "nvidia_base_url", mode="before")
+    # Embedding settings: "local" (FastEmbed BGE-base 768-dim) or "gemini" (Gemini Embedding 2 / gemini-embedding-001 768-dim)
+    embedding_provider: Literal["local", "gemini"] = "local"
+    gemini_embedding_model: str = "models/gemini-embedding-001"
+
+    @field_validator("llm_provider", "llm_model", "nvidia_base_url", "embedding_provider", "gemini_embedding_model", mode="before")
     @classmethod
     def default_empty_llm_settings(cls, value, info: ValidationInfo):
         if isinstance(value, str) and not value.strip():
@@ -53,6 +57,14 @@ class Settings(BaseSettings):
             elif v.startswith("postgresql://") and "asyncpg" not in v:
                 return v.replace("postgresql://", "postgresql+asyncpg://", 1)
         return v or ""
+
+    @model_validator(mode="after")
+    def default_celery_urls(self) -> "Settings":
+        if not self.celery_broker_url:
+            self.celery_broker_url = self.redis_url
+        if not self.celery_result_backend:
+            self.celery_result_backend = self.redis_url
+        return self
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

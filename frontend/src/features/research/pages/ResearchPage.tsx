@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { MarkdownMessage } from "@/components/ui/markdown-message";
-import { Send, Bot, User, Wrench, AlertCircle, Loader2 } from "lucide-react";
+import { Send, Bot, User, Wrench, AlertCircle, Loader2, Cpu } from "lucide-react";
 import { conversationsApi } from "@/lib/api/resources";
 
 interface ClientMessage {
@@ -33,6 +33,43 @@ export function ResearchPage() {
   const [activeConvId, setActiveConvId] = useState<string | null>(() => 
     sessionStorage.getItem("quantpilot_conv_id")
   );
+
+  // Fetch available AI models (chat & embeddings)
+  const { data: modelsData } = useQuery({
+    queryKey: ["models"],
+    queryFn: async () => {
+      const url = `${import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1"}/models`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to load models");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const [selectedModel, setSelectedModel] = useState<{ provider: string; model: string }>(() => {
+    const saved = sessionStorage.getItem("quantpilot_selected_model");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return { provider: "gemini", model: "gemini-3.6-flash" };
+  });
+
+  useEffect(() => {
+    if (modelsData && !sessionStorage.getItem("quantpilot_selected_model")) {
+      const defaultChat = modelsData.chat_models?.find((m: any) => m.is_default) || modelsData.chat_models?.[0];
+      if (defaultChat) {
+        setSelectedModel({ provider: defaultChat.provider, model: defaultChat.model });
+      }
+    }
+  }, [modelsData]);
+
+  const handleModelChange = (prov: string, mod: string) => {
+    const val = { provider: prov, model: mod };
+    setSelectedModel(val);
+    sessionStorage.setItem("quantpilot_selected_model", JSON.stringify(val));
+  };
 
   // Fetch historical messages if we have a conversation ID
   const { data: historyData, isLoading: isLoadingHistory, error: historyError } = useQuery({
@@ -135,7 +172,11 @@ export function ResearchPage() {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ content: userMsgContent }),
+        body: JSON.stringify({ 
+          content: userMsgContent,
+          provider: selectedModel.provider,
+          model: selectedModel.model
+        }),
         signal: abortControllerRef.current.signal
       });
 
@@ -209,7 +250,47 @@ export function ResearchPage() {
   return (
     <PageContainer title="AI Research Workspace" description="Interact with your LangGraph quantitative research assistant.">
       <div className="flex h-full gap-6">
-        <Card className="flex-1 flex flex-col h-[calc(100vh-12rem)] bg-background/50 border-border/50">
+        <Card className="flex-1 flex flex-col h-[calc(100vh-12rem)] bg-background/50 border-border/50 overflow-hidden">
+          {/* Model Selector Header */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 px-4 py-2.5 bg-card/60">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Cpu className="h-3.5 w-3.5 text-ai" /> Model:
+              </span>
+              <select
+                value={`${selectedModel.provider}:${selectedModel.model}`}
+                onChange={(e) => {
+                  const [prov, ...rest] = e.target.value.split(":");
+                  handleModelChange(prov, rest.join(":"));
+                }}
+                disabled={activeStream?.isStreaming}
+                className="bg-background border border-border/60 text-foreground text-xs rounded-md px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-ai font-medium cursor-pointer disabled:opacity-50"
+              >
+                {modelsData?.chat_models ? (
+                  modelsData.chat_models.map((m: any) => (
+                    <option key={`${m.provider}:${m.model}`} value={`${m.provider}:${m.model}`}>
+                      {m.display_name}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="gemini:gemini-3.6-flash">Google Gemini (gemini-3.6-flash)</option>
+                    <option value="nim:nvidia/nemotron-3-ultra-550b-a55b">NVIDIA Nemotron 3 Ultra (NIM)</option>
+                  </>
+                )}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground text-[11px]">Embedding:</span>
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary/80 text-foreground border border-border/40 font-mono">
+                {modelsData?.current_embedding_provider === "local"
+                  ? "Local FastEmbed (BGE 768d)"
+                  : "Gemini Embedding 2"}
+              </span>
+            </div>
+          </div>
+
           <CardContent ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
             
             {isLoadingHistory && (

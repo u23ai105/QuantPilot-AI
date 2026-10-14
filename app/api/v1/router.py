@@ -6,6 +6,7 @@ from app.api.v1.conversations import router as conversations_router
 from app.api.v1.documents import router as documents_router
 from app.api.v1.indicators import router as indicators_router
 from app.api.v1.market_data import router as market_data_router
+from app.api.v1.models import router as models_router
 from app.api.v1.strategies import router as strategies_router
 
 api_router = APIRouter()
@@ -17,3 +18,4 @@ api_router.include_router(strategies_router)
 api_router.include_router(backtests_router)
 api_router.include_router(conversations_router)
 api_router.include_router(documents_router)
+api_router.include_router(models_router)

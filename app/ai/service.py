@@ -67,8 +67,10 @@ class AgentService:
     accumulated a duplicate copy of the whole conversation on every request.
     """
 
-    def __init__(self):
-        self._model = create_chat_model()
+    def __init__(self, provider: str | None = None, model: str | None = None):
+        self._provider = provider
+        self._model_name = model
+        self._model = create_chat_model(provider=provider, model=model)
         self._tools = ALL_TOOLS
         self._model_with_tools = self._model.bind_tools(self._tools)
         self._graph = build_graph(self._model_with_tools, self._tools)

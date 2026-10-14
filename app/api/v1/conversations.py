@@ -14,9 +14,10 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.model_registry import LLMConfigurationError
+from app.ai.model_registry import LLMConfigurationError, resolve_model
 from app.ai.service import AgentService
 from app.api.deps import get_current_user, get_db_session
+from app.core.config import settings
 from app.core.exceptions import DataProviderError
 from app.models.user import User
 from app.schemas.conversations import (
@@ -43,19 +44,25 @@ class SSEResponse(StreamingResponse):
     media_type = "text/event-stream"
 
 
-# Singleton agent service (constructed once, reused across requests)
-_agent_service: AgentService | None = None
+# Cached agent services by (provider, model) tuple
+_agent_services: dict[tuple[str, str], AgentService] = {}
 
 
-def _get_agent_service() -> AgentService:
-    """Lazily construct the singleton, reporting invalid provider settings as a 502."""
-    global _agent_service
-    if _agent_service is None:
+def _get_agent_service(provider: str | None = None, model: str | None = None) -> AgentService:
+    """Lazily construct or retrieve the AgentService for the given provider/model, reporting invalid settings as a 502."""
+    prov = provider or settings.llm_provider
+    try:
+        mod = resolve_model(prov, model or settings.llm_model)
+    except LLMConfigurationError as exc:
+        raise DataProviderError(f"AI agent unavailable: {exc}") from exc
+
+    key = (prov, mod)
+    if key not in _agent_services:
         try:
-            _agent_service = AgentService()
+            _agent_services[key] = AgentService(provider=prov, model=mod)
         except LLMConfigurationError as exc:
             raise DataProviderError(f"AI agent unavailable: {exc}") from exc
-    return _agent_service
+    return _agent_services[key]
 
 
 @router.post(
@@ -115,7 +122,7 @@ async def send_message(
     # Verify ownership
     await conv_service.get_conversation(conversation_id, user.id)
 
-    agent = _get_agent_service()
+    agent = _get_agent_service(provider=data.provider, model=data.model)
 
     async def event_generator():
         async for event in agent.handle_message(

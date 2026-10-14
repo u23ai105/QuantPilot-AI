@@ -1,11 +1,12 @@
 import asyncio
+import gc
 import logging
 from datetime import datetime, timezone
 
 from celery.exceptions import MaxRetriesExceededError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.ai.embedding import GeminiEmbeddingAdapter
+from app.ai.embedding import get_embedding_adapter
 from app.core.config import settings
 from app.models.document import DocumentChunk
 from app.repositories.document_repo import DocumentRepository
@@ -46,10 +47,20 @@ async def process_document_async(document_id: int) -> None:
                 if not chunks_data:
                     raise ValueError("No extractable text found in PDF.")
 
-                # 3. Embedding (could fail transiently)
+                page_count = len(pages)
+                doc.page_count = page_count
+                doc.status = "PROCESSING"
+                doc.error_message = None
+                await repo.update(doc)
+                del pages
+                gc.collect()
+
+                # 3. Embedding (supports local FastEmbed or Gemini Embedding 2)
                 texts_to_embed = [c["chunk_text"] for c in chunks_data]
-                adapter = GeminiEmbeddingAdapter()
+                adapter = get_embedding_adapter()
+                logger.info("Starting embedding of %d chunks using %s...", len(texts_to_embed), adapter.__class__.__name__)
                 vectors = await adapter.embed_documents(texts_to_embed)
+                logger.info("Finished embedding, received %d vectors", len(vectors))
 
                 # Prepare chunks
                 db_chunks = []
@@ -63,19 +74,25 @@ async def process_document_async(document_id: int) -> None:
                             embedding=vector,
                         )
                     )
+                del chunks_data
+                del texts_to_embed
+                del vectors
+                gc.collect()
 
                 # Idempotency: clear existing chunks if any
                 await repo.clear_chunks(doc.id)
 
-                # Insert new chunks
-                await repo.bulk_insert_chunks(db_chunks)
+                # Insert new chunks in safe batches
+                await repo.bulk_insert_chunks(db_chunks, batch_size=40)
+                logger.info("Successfully inserted %d chunks for document %d", len(db_chunks), doc.id)
 
                 # Success
                 doc.status = "READY"
-                doc.page_count = len(pages)
+                doc.page_count = page_count
                 doc.processed_at = datetime.now(timezone.utc)
                 doc.error_message = None
                 await repo.update(doc)
+                logger.info("Document %d marked READY in database", doc.id)
 
             except ValueError as e:
                 # Permanent failure (e.g. invalid dimensions, unreadable PDF)
@@ -85,8 +102,7 @@ async def process_document_async(document_id: int) -> None:
                 await repo.update(doc)
                 logger.error(f"Permanent failure for document {document_id}: {e}")
             except Exception as e:
-                # Let transient errors (network, API, etc.) bubble up for retry
-                # but we shouldn't mark it FAILED yet unless max retries exceeded.
+                logger.error("Transient error processing document %d: %s", document_id, e)
                 raise e
 
     finally:
@@ -100,13 +116,24 @@ def embed_document(self, document_id: int):
     try:
         asyncio.run(process_document_async(document_id))
     except Exception as exc:
-        logger.warning(f"Transient error processing document {document_id}: {exc}")
+        logger.warning(f"Error processing document {document_id}: {exc}")
+        exc_msg = str(exc)
+        is_quota_exhausted = "daily quota" in exc_msg.lower() or "quota exceeded" in exc_msg.lower()
+
+        if is_quota_exhausted or self.request.retries >= self.max_retries:
+            logger.error(f"Permanent or quota failure for document {document_id}; marking as FAILED: {exc}")
+            asyncio.run(mark_document_failed(document_id, exc_msg))
+            return
         try:
-            # Retry with exponential backoff
-            self.retry(exc=exc, countdown=2**self.request.retries)
+            # Retry with exponential backoff (15s, 30s, 60s) for transient network glitches
+            countdown = 15 * (2**self.request.retries)
+            self.retry(exc=exc, countdown=countdown)
         except MaxRetriesExceededError:
-            # If max retries exceeded, we must mark as FAILED
             asyncio.run(mark_document_failed(document_id, str(exc)))
+        except Exception:
+            if self.request.retries >= self.max_retries:
+                asyncio.run(mark_document_failed(document_id, str(exc)))
+            raise
 
 
 async def mark_document_failed(document_id: int, error_message: str):

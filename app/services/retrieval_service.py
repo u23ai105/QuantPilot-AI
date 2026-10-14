@@ -3,19 +3,18 @@ from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.embedding import GeminiEmbeddingAdapter
+from app.ai.embedding import get_embedding_adapter
 from app.ai.embedding_cache import CachedQueryEmbedder
 from app.repositories.document_repo import DocumentRepository
 from app.schemas.documents import ChunkWithCitation
 
 
 class RetrievalService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, embedding_provider: str | None = None, embedding_model: str | None = None):
         self.repo = DocumentRepository(session)
-        # Wrapped in the Redis cache: the query embedding is a paid Gemini call and a pure function of
-        # the text, so a repeated question should not spend quota twice. Falls through to the adapter on
-        # a miss or if Redis is unreachable — see `app/ai/embedding_cache.py`.
-        self.embedding_adapter = CachedQueryEmbedder(GeminiEmbeddingAdapter())
+        # Wrapped in the Redis cache: repeats are served from Redis without re-embedding.
+        # Uses the configured embedding provider (local FastEmbed or Gemini Embedding 2).
+        self.embedding_adapter = CachedQueryEmbedder(get_embedding_adapter(provider=embedding_provider, model=embedding_model))
 
     async def search(self, user_id: UUID, query: str, limit: int = 5, document_id: int | None = None) -> list[ChunkWithCitation]:
         # Enforce document ownership if document_id is provided
