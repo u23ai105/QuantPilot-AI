@@ -28,7 +28,9 @@ services:
       - key: GEMINI_MODEL
         value: gemini-3.6-flash
       - key: EMBEDDING_PROVIDER
-        value: local
+        value: gemini
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       - key: NVIDIA_API_KEY
         sync: false
 
